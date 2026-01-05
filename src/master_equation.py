@@ -143,11 +143,55 @@ def relaxation_time_from_energy(
 
 
 def stationary_distribution(W: np.ndarray) -> np.ndarray:
-    """计算稳态分布（生成矩阵 Q^T 的零特征值对应的特征向量）。"""
+    """计算稳态分布（求解 Q^T P = 0，sum(P) = 1）。
+
+    使用 SVD 方法求解 Q^T 的零空间，比特征值分解更稳健。
+    如果 SVD 失败，回退到 Boltzmann 分布（需要能量信息时）。
+    """
     Q = generator_from_rates(W)
     n = Q.shape[0]
 
-    if eig is None:  # pragma: no cover
+    # 方法1：SVD 求零空间（最稳健）
+    try:
+        U, S, Vh = np.linalg.svd(Q.T, full_matrices=True)
+        # 最小奇异值对应的右奇异向量是零空间
+        null_idx = np.argmin(S)
+        # 检查最小奇异值是否足够小（相对于最大奇异值）
+        if S.max() > 0 and S[null_idx] / S.max() < 1e-10:
+            vec = Vh[null_idx, :]
+            vec = np.real(vec)
+            # 确保非负
+            if np.min(vec) < 0:
+                vec = -vec
+            vec = np.maximum(vec, 0.0)
+            s = float(np.sum(vec))
+            if s > 0:
+                P = vec / s
+                # 验证残差
+                residual = np.linalg.norm(Q.T @ P)
+                if residual < 1e-6:
+                    return P.astype(float)
+    except Exception:
+        pass
+
+    # 方法2：求解增广线性系统 [Q^T; 1...1] @ P = [0; 1]
+    try:
+        A = np.vstack([Q.T, np.ones(n)])
+        b = np.zeros(n + 1)
+        b[-1] = 1.0
+        P, residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
+        P = np.maximum(P, 0.0)
+        s_sum = float(np.sum(P))
+        if s_sum > 0:
+            P = P / s_sum
+            residual = np.linalg.norm(Q.T @ P)
+            if residual < 1e-6:
+                return P.astype(float)
+    except Exception:
+        pass
+
+    # 方法3：特征值分解（原方法，作为后备）
+    if eig is None:
         evals, evecs = np.linalg.eig(Q.T)
     else:
         evals, evecs = eig(Q.T)
