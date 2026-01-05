@@ -149,6 +149,92 @@ def scaling_experiment(
     }
 
 
+def path_stats_experiment(
+    N_values: List[int],
+    t0: float,
+    k_spring: float,
+    mass: float,
+    alpha: float,
+    kT: float,
+    sigma: float,
+    initial_energy_fraction: float = 0.9,
+    n_trajectories: int = 1000,
+    terminal_energy_fraction: float = 0.1,
+    max_steps: int = 10000,
+    seed: int = 42,
+) -> Dict:
+    """仅计算 KMC 路径统计（用于可视化对照，不解主方程）。
+
+    设计目的：
+    - Fig3 需要展示 “低温强跨栏（尖锐）” 与 “更高温（更宽）” 的对照；
+    - 若直接重复 scaling_experiment，会额外求解主方程，耗时且与目的无关。
+
+    Returns:
+        dict: { "N": ..., "path_stats": List[Dict] }
+    """
+    if len(N_values) == 0:
+        raise ValueError("N_values 不能为空")
+    if not (0.0 <= initial_energy_fraction <= 1.0):
+        raise ValueError("initial_energy_fraction 必须在 [0,1] 内")
+    if not (0.0 <= terminal_energy_fraction <= 1.0):
+        raise ValueError("terminal_energy_fraction 必须在 [0,1] 内")
+
+    N_list: List[int] = []
+    path_stats_list: List[Dict] = []
+
+    for n_cells in N_values:
+        W, k_grid, E_grid = build_rate_matrix(
+            n_cells=int(n_cells),
+            t0=t0,
+            k_spring=k_spring,
+            mass=mass,
+            alpha=alpha,
+            kT=kT,
+            sigma=sigma,
+            a=1.0,
+            delta_mode="gaussian",
+        )
+
+        E = np.asarray(E_grid, dtype=float)
+        E_min = float(np.min(E))
+        E_max = float(np.max(E))
+
+        E_init_target = E_min + float(initial_energy_fraction) * (E_max - E_min)
+        initial_state = int(np.argmin(np.abs(E - E_init_target)))
+        E_terminal = E_min + float(terminal_energy_fraction) * (E_max - E_min)
+
+        def terminal_condition(_state: int, energy: float, _time: float) -> bool:
+            return energy <= E_terminal
+
+        trajectories = run_ensemble(
+            W=W,
+            E_grid=E,
+            initial_state=initial_state,
+            terminal_condition=terminal_condition,
+            n_trajectories=n_trajectories,
+            max_steps=max_steps,
+            seed=seed,
+        )
+        stats = dict(path_statistics(trajectories))
+        stats.update(
+            {
+                "initial_state": int(initial_state),
+                "E_init_target": float(E_init_target),
+                "E_terminal": float(E_terminal),
+                "k_grid": np.asarray(k_grid, dtype=float),
+                "E_grid": E,
+            }
+        )
+
+        N_list.append(int(n_cells))
+        path_stats_list.append(stats)
+
+    return {
+        "N": np.asarray(N_list, dtype=int),
+        "path_stats": path_stats_list,
+    }
+
+
 def fit_power_law(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     """幂律拟合 y = A * x^β。"""
     x = np.asarray(x, dtype=float)
@@ -170,4 +256,3 @@ def fit_power_law(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     ss_tot = float(np.sum((ly - float(np.mean(ly))) ** 2))
     R2 = 1.0 - ss_res / ss_tot if ss_tot > 0.0 else 1.0
     return A, float(beta), float(R2)
-
