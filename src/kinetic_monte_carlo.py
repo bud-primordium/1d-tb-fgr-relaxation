@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -135,3 +135,58 @@ def run_trajectory(
         energies=np.asarray(energies, dtype=float),
     )
 
+
+def run_ensemble(
+    W: np.ndarray,
+    E_grid: np.ndarray,
+    initial_state: int,
+    terminal_condition: Callable[[int, float, float], bool],
+    n_trajectories: int = 1000,
+    max_steps: int = 10000,
+    seed: int = 42,
+) -> List[Trajectory]:
+    """运行多条 KMC 轨迹用于统计。"""
+    if n_trajectories <= 0:
+        raise ValueError("n_trajectories 必须为正整数")
+    rng = np.random.default_rng(int(seed))
+    trajectories: List[Trajectory] = []
+    for _ in range(int(n_trajectories)):
+        trajectories.append(
+            run_trajectory(
+                W=W,
+                E_grid=E_grid,
+                initial_state=initial_state,
+                terminal_condition=terminal_condition,
+                max_steps=max_steps,
+                rng=rng,
+            )
+        )
+    return trajectories
+
+
+def path_statistics(trajectories: List[Trajectory]) -> Dict:
+    """统计路径特征。"""
+    if len(trajectories) == 0:
+        raise ValueError("trajectories 不能为空")
+
+    n_hops = np.array([tr.n_hops for tr in trajectories], dtype=int)
+    total_time = np.array([tr.total_time for tr in trajectories], dtype=float)
+
+    max_hops = int(np.max(n_hops))
+    hist = np.bincount(n_hops, minlength=max_hops + 1).astype(int)
+
+    step_sizes: List[float] = []
+    for tr in trajectories:
+        if tr.energies.shape[0] >= 2:
+            dE = tr.energies[:-1] - tr.energies[1:]
+            step_sizes.extend([float(x) for x in dE])
+
+    return {
+        "n_trajectories": int(len(trajectories)),
+        "n_hops_mean": float(np.mean(n_hops)),
+        "n_hops_std": float(np.std(n_hops)),
+        "n_hops_histogram": hist,
+        "total_time_mean": float(np.mean(total_time)),
+        "total_time_std": float(np.std(total_time)),
+        "step_sizes": np.asarray(step_sizes, dtype=float),
+    }

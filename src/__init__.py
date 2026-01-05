@@ -27,7 +27,13 @@ from .fermi_golden_rule import (
     tau_to_seconds,
     total_rate,
 )
-from .kinetic_monte_carlo import Trajectory, gillespie_step, run_trajectory
+from .kinetic_monte_carlo import (
+    Trajectory,
+    gillespie_step,
+    path_statistics,
+    run_ensemble,
+    run_trajectory,
+)
 from .master_equation import (
     generator_from_rates,
     mean_energy,
@@ -35,3 +41,4 @@ from .master_equation import (
     solve_master_equation,
     stationary_distribution,
 )
+from .relaxation_analysis import fit_power_law, scaling_experiment
