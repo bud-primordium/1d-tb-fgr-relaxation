@@ -36,8 +36,18 @@ fgr_tb_demo/
 ├── scripts/                    # 可视化脚本
 ├── tests/                      # 单元测试
 ├── report/                     # LaTeX 报告
+│   ├── fgr_intraband_relaxation.tex
+│   └── fgr_intraband_relaxation.pdf
 └── results/                    # 输出图片
 ```
+
+## 主要结论
+
+1. **O(1) 标度律**：初态总跃迁速率 Γ ∝ N^β，β ≈ 0.03，不随系统尺寸发散
+2. **路径统计**：低温下 99% 轨迹仅需 3 步完成弛豫，多步路径占比 f_aux ≈ 1%
+3. **主导声子**：跃迁集中于布里渊区边界（q ≈ π）的高频声学模式
+
+详见 `report/fgr_intraband_relaxation.pdf`。
 
 ## 核心公式
 
