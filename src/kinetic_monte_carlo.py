@@ -190,3 +190,84 @@ def path_statistics(trajectories: List[Trajectory]) -> Dict:
         "total_time_std": float(np.std(total_time)),
         "step_sizes": np.asarray(step_sizes, dtype=float),
     }
+
+
+def _energy_to_bin_labels(
+    energies: np.ndarray,
+    E_min: float,
+    E_max: float,
+    n_bins: int,
+) -> np.ndarray:
+    """把能量序列映射到离散分箱标签。
+
+    约定：
+    - 先把能量归一化到 [0,1]：E_norm = (E - E_min)/(E_max - E_min)
+    - 将 [0,1] 等分为 n_bins 段
+    - 标签从带顶到带底编号：1（高能）→ n_bins（低能）
+    """
+    if n_bins <= 0:
+        raise ValueError("n_bins 必须为正整数")
+    energies = np.asarray(energies, dtype=float)
+    span = float(E_max - E_min)
+    if span <= 0:
+        raise ValueError("E_max 必须大于 E_min")
+
+    E_norm = (energies - float(E_min)) / span
+    E_norm = np.clip(E_norm, 0.0, 1.0)
+    # idx=0 对应带底段，idx=n_bins-1 对应带顶段
+    idx = np.minimum((E_norm * n_bins).astype(int), n_bins - 1)
+    labels = n_bins - idx
+    return labels.astype(int)
+
+
+def trajectory_motif(
+    trajectory: Trajectory,
+    E_min: float,
+    E_max: float,
+    n_bins: int = 4,
+) -> str:
+    """提取单条轨迹的“路径 motif”（基于能量分箱的粗粒化序列）。
+
+    返回格式使用连字符（例如 "1-3-4"），便于存储与统计；
+    可视化时可再替换为箭头 "1→3→4"。
+    """
+    labels = _energy_to_bin_labels(trajectory.energies, E_min=E_min, E_max=E_max, n_bins=n_bins)
+    if labels.size == 0:
+        return ""
+
+    compressed = [int(labels[0])]
+    for x in labels[1:]:
+        x = int(x)
+        if x != compressed[-1]:
+            compressed.append(x)
+    return "-".join(str(x) for x in compressed)
+
+
+def motif_statistics(
+    trajectories: List[Trajectory],
+    E_min: float,
+    E_max: float,
+    n_bins: int = 4,
+) -> Dict:
+    """统计一组轨迹的 motif 分布。
+
+    说明：
+    - motif 是对“能量段序列”的统计，用来回答“是否从直达变成经由中间态”等结构性问题；
+    - 这不是对具体态编号（k 点）的枚举，而是与 N 无关的粗粒化路径结构度量。
+    """
+    if len(trajectories) == 0:
+        raise ValueError("trajectories 不能为空")
+
+    counts: Dict[str, int] = {}
+    for tr in trajectories:
+        m = trajectory_motif(tr, E_min=E_min, E_max=E_max, n_bins=n_bins)
+        if m == "":
+            continue
+        counts[m] = int(counts.get(m, 0) + 1)
+
+    return {
+        "n_bins": int(n_bins),
+        "bin_edges": np.linspace(0.0, 1.0, int(n_bins) + 1, dtype=float),
+        "counts": counts,
+        "n_trajectories": int(len(trajectories)),
+    }

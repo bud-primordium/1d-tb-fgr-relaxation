@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from typing import Dict, List, Tuple
 
 import numpy as np
 
 from .fermi_golden_rule import build_rate_matrix, characteristic_step, total_rate
-from .kinetic_monte_carlo import path_statistics, run_ensemble
+from .kinetic_monte_carlo import motif_statistics, path_statistics, run_ensemble
 from .master_equation import (
     mean_energy,
     relaxation_time_from_energy,
@@ -118,6 +119,7 @@ def scaling_experiment(
             seed=seed,
         )
         stats = path_statistics(trajectories)
+        motifs = motif_statistics(trajectories, E_min=E_min, E_max=E_max, n_bins=4)
 
         N_list.append(int(n_cells))
         gamma_list.append(float(gamma0))
@@ -134,6 +136,11 @@ def scaling_experiment(
                 "E_eq": float(E_eq),
                 "k_grid": np.asarray(k_grid, dtype=float),
                 "E_grid": E,
+                "motif_n_bins": int(motifs["n_bins"]),
+                "motif_bin_edges": np.asarray(motifs["bin_edges"], dtype=float),
+                "motif_counts_json": json.dumps(
+                    motifs["counts"], ensure_ascii=True, sort_keys=True, separators=(",", ":")
+                ),
             }
         )
         path_stats_list.append(stats)
@@ -216,6 +223,7 @@ def path_stats_experiment(
             seed=seed,
         )
         stats = dict(path_statistics(trajectories))
+        motifs = motif_statistics(trajectories, E_min=E_min, E_max=E_max, n_bins=4)
         stats.update(
             {
                 "initial_state": int(initial_state),
@@ -223,6 +231,11 @@ def path_stats_experiment(
                 "E_terminal": float(E_terminal),
                 "k_grid": np.asarray(k_grid, dtype=float),
                 "E_grid": E,
+                "motif_n_bins": int(motifs["n_bins"]),
+                "motif_bin_edges": np.asarray(motifs["bin_edges"], dtype=float),
+                "motif_counts_json": json.dumps(
+                    motifs["counts"], ensure_ascii=True, sort_keys=True, separators=(",", ":")
+                ),
             }
         )
 
