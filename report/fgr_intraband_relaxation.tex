@@ -1,0 +1,565 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[UTF8]{ctex}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+% 定义常用命令
+\newcommand{\bra}[1]{\langle #1 |}
+\newcommand{\ket}[1]{| #1 \rangle}
+\newcommand{\braket}[2]{\langle #1 | #2 \rangle}
+\newcommand{\mean}[1]{\langle #1 \rangle}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\ii}{\mathrm{i}}
+
+\title{\textbf{一维紧束缚模型中声子辅助带内弛豫的尺寸效应}}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    带内弛豫涉及多步声子辅助跃迁。当系统扩胞时，中间态数目增加，可能的弛豫路径（如 $1 \to 4$、$1 \to 2 \to 4$、$1 \to 2 \to 3 \to 4$ 等）也随之增多。本文基于一维紧束缚模型，采用 Fermi 黄金规则构建速率网络，探索带内弛豫的基本规律：弛豫速率如何随系统尺寸变化？哪些路径是主要的？哪些声子模式主导跃迁？
+
+    数值结果表明：(1) 初态（带顶附近）的总跃迁速率 $\Gamma_{i_0}$ 满足 $\Gamma_{i_0} \propto N^\beta$，其中 $\beta \approx 0.03$，符合理论推导的 O(1) 预期，弛豫速率不随系统尺寸发散；(2) 低温下约 99\% 的弛豫轨迹仅需 3 步即可完成（多步路径占比 $f_{\rm aux} = P(n \geq 4) \approx 1\%$），平均跳数在不同 $N$ 下几乎不变（变异系数 $< 0.01$）；(3) 跃迁集中于布里渊区边界附近的高频声子模式（$q_{\rm peak} \approx \pi$），显著通道数远小于态数目。参数稳健性检验表明，上述结论在温度 $kT \in [0.01, 0.1]$ 与电声耦合 $\alpha \in [0.2, 1.0]$ 范围内稳定；能量展宽参数 $\sigma$ 需大于临界值 $\sigma_c \approx 0.07$ 以保证离散能级的准连续近似有效。
+\end{abstract}
+
+%=============================================================================
+\section{引言}
+%=============================================================================
+
+\subsection{物理背景}
+
+载流子带内弛豫是热载流子冷却、非辐射复合等过程的前驱步骤。在周期性体系中，高能电子态向低能态的弛豫需要通过声子发射（或吸收）完成能量转移。当能量差较大时，单次声子过程可能无法跨越整个能隙，需要多步跃迁依次进行。
+
+当系统扩胞（如从原胞到超胞）时，布里渊区折叠导致能带离散点数增加，中间态数目 $\propto N$。弛豫路径的可能组合也随之增多——例如从态 1 到态 4，可以是直接跃迁 $1 \to 4$，也可以经过中间态 $1 \to 2 \to 4$、$1 \to 3 \to 4$、$1 \to 2 \to 3 \to 4$ 等。
+
+\subsection{核心问题}
+
+本文旨在探索带内弛豫的基本规律，具体包括：
+\begin{enumerate}
+    \item 弛豫速率是否随系统尺寸 $N$ 发散？
+    \item 哪些弛豫路径是主要的？平均需要几步？
+    \item 哪些声子模式主导跃迁？
+\end{enumerate}
+
+\subsection{研究背景}
+
+在与施昊哲、谢昀城的前期讨论中，我们初步认为弛豫速率 $\Gamma$ 不随 $N$ 发散，但对于“强相干”与“退相干”条件下，两类辅助跃迁的物理图像存在困惑。经褚老师指正与进一步推导分析\footnote{详见施昊哲的\texttt{time\_compare.pdf}}，认同室温下常见体系适合采用非相干速率网络框架处理。无量纲判据 $\mathcal{R}=\frac{\tau_{dwell}}{T_2} \gg 1$（停留时间与跃迁时间比值）表明相位记忆在一个跃迁周期内即丧失，因此可采用 Markov 速率网络描述。本文在此前提下进行探究。
+
+\subsection{本文目标}
+
+\begin{enumerate}
+    \item 建立最小模型，定量验证弛豫速率的尺寸依赖性；
+    \item 通过路径统计，确定主要的弛豫路径与平均步数；
+    \item 分析声子模式分布，识别主导跃迁的声子动量；
+    \item 检验结论对关键参数的稳定性。
+\end{enumerate}
+
+%=============================================================================
+\section{理论框架}
+%=============================================================================
+
+本文采用无量纲约定：$\hbar = k_B = t_0 = 1$，其中 $t_0$ 为最近邻跳跃积分。
+
+\subsection{Fermi 黄金规则}
+
+考虑离散 Bloch 态 $\ket{k_i} \to \ket{k_j}$ 的声子辅助跃迁。根据 Fermi 黄金规则，单步跃迁速率为：
+\begin{equation}
+    W_{i \to j} = \frac{2\pi}{N} \sum_q |g_{ij}(q)|^2 \left[ (n_q + 1) \delta_\sigma(E_j - E_i + \omega_q) + n_q \delta_\sigma(E_j - E_i - \omega_q) \right]
+    \label{eq:fgr}
+\end{equation}
+其中：
+\begin{itemize}
+    \item $\sum_q$ 形式上对所有声子模式求和，但动量守恒 $k_j = k_i + q \pmod{2\pi/a}$ 使得对给定 $(i,j)$ 只有唯一 $q_{ij} = k_j - k_i$ 满足选择定则，因此实际上每对 $(i,j)$ 仅对应一个有效声子模式；
+    \item $g_{ij}(q) = \bra{\psi_i} \partial H / \partial Q_q \ket{\psi_j}$ 为电声耦合矩阵元\footnote{沿用上次报告的约定，将$1/N$因子提至外侧}；
+    \item $n_q = 1/[\exp(\omega_q / kT) - 1]$ 为玻色占据数；
+    \item $\delta_\sigma$ 为高斯展宽函数，宽度 $\sigma$ 模拟有限寿命、无序等效应；
+    \item 第一项对应声子发射（$E_i > E_j$），第二项对应声子吸收（$E_i < E_j$）。
+\end{itemize}
+
+\subsection{跃迁选择定则}
+
+对于 Bloch 态之间的跃迁，存在以下约束：
+\begin{enumerate}
+    \item \textbf{动量守恒}：$k_j = k_i \pm q \pmod{2\pi/a}$；
+    \item \textbf{能量守恒}：$|E_i - E_j| = \omega_q$（由 $\delta_\sigma$ 软化）；
+    \item \textbf{声子色散约束}：$\omega_q = \omega_{\max} |\sin(qa/2)|$。
+\end{enumerate}
+在本模型中，这些选择定则使速率矩阵 $W$ 呈现稀疏带状结构，详见附录\ref{sec:app_rate_matrix}.
+
+\subsection{总跃迁速率的 O(1) 标度律}
+
+定义态 $i$ 的总跃迁速率（逃逸速率）为：
+\begin{equation}
+    \Gamma_i = \sum_{j \neq i} W_{i \to j}
+    \label{eq:gamma_def}
+\end{equation}
+
+在离散体系中，单个跃迁通道 $W_{i \to j}$ 带有显式的 $1/N$ 因子（式~\eqref{eq:fgr}）。当 $N$ 增大时，能量窗口内满足选择定则的末态数目如何变化？
+
+从连续极限的角度理解：在热力学极限下，对 $k$ 空间的求和可替换为积分
+\begin{equation}
+    \sum_k \to \frac{V}{(2\pi)^d} \int \dd^d k
+\end{equation}
+其中 $V \propto N$（一维情形 $V = Na$）。因此，可选末态数目 $\propto N$。结合Fermi 黄金规则：
+\begin{equation}
+    \Gamma_i \sim \underbrace{N}_{\text{可选末态数}} \times \underbrace{\frac{1}{N}}_{\text{单通道因子}} \times \underbrace{O(1)}_{\text{耦合权重}} \sim O(1)
+    \label{eq:gamma_scaling}
+\end{equation}
+
+这解释了为何候选路径的组合增长不会导致弛豫速率发散：态密度的增长被 FGR 公式中的归一化因子抵消，总跃迁速率保持为常数量级。
+
+\subsection{主方程}
+
+速率网络的演化由主方程描述：
+\begin{equation}
+    \frac{\dd P_i}{\dd t} = \sum_j \left( W_{j \to i} P_j - W_{i \to j} P_i \right)
+    \label{eq:master}
+\end{equation}
+矩阵形式为 $\dot{\mathbf{P}} = \mathbf{Q}^T \mathbf{P}$，其中生成矩阵 $\mathbf{Q}$ 定义为：
+\begin{equation}
+    Q_{ij} = \begin{cases}
+        W_{i \to j},                       & i \neq j \\
+        -\Gamma_i = -\sum_{j} W_{i \to j}, & i = j
+    \end{cases}
+\end{equation}
+
+稳态分布 $\mathbf{P}_\infty$ 满足 $\mathbf{Q}^T \mathbf{P}_\infty = \mathbf{0}$ 且 $\sum_i P_{\infty,i} = 1$。数值求解采用 SVD 分解提取零空间，比特征值分解更稳健，见仓库\href{https://github.com/bud-primordium/1d-tb-fgr-relaxation/commit/e1ee6e1c5ec7de6929650d0c177e0e77ff0138fd}{\texttt{commit e1ee6e1}}.
+
+\textbf{细致平衡}：速率矩阵近似满足 $W_{i \to j} / W_{j \to i} = \exp[-(E_j - E_i)/kT]$，使稳态趋近 Boltzmann 分布，在图\ref{fig:rate_matrix}中得到验证。
+
+\subsection{Gillespie 算法}
+
+动力学 Monte Carlo（KMC）采用 Gillespie 算法模拟单轨迹演化：
+\begin{enumerate}
+    \item 计算当前态 $i$ 的总出率 $\Gamma_i = \sum_j W_{i \to j}$；
+    \item 抽样等待时间 $\Delta t = -\ln(r_1) / \Gamma_i$，其中 $r_1 \in (0,1)$ 为均匀随机数；
+    \item 以概率 $p_{ij} = W_{i \to j} / \Gamma_i$ 抽样下一态 $j$。
+\end{enumerate}
+统计量包括跳数 $n_{\rm hop}$、总时间 $t_{\rm total}$、以及单步能量变化 $\Delta E = E_{\rm before} - E_{\rm after}$.
+
+\subsection{弛豫时间定义}
+
+本文采用两种互补的弛豫时间定义：
+\begin{itemize}
+    \item \textbf{ME 定义}：$\tau_{\rm ME}$ 为平均能量 $\mean{E}(t)$ 衰减到阈值的时间；
+    \item \textbf{KMC 定义}：$\tau_{\rm KMC} = \mean{t_{\rm first\ passage}}$，即从初态出发首次到达终止阈值的平均时间。
+\end{itemize}
+两者绝对值不要求一致；本文关注它们随 $N$ 的变化趋势。
+
+%=============================================================================
+\section{计算模型}
+%=============================================================================
+
+\subsection{一维紧束缚模型}
+
+考虑 $N$ 个格点的一维原子链，最近邻跳跃积分为 $t_0$。电子色散关系为：
+\begin{equation}
+    E(k) = 2t_0 \cos(ka)
+\end{equation}
+其中 $a$ 为晶格常数（取 $a = 1$）。
+
+声子采用单原子链模型，色散关系为：
+\begin{equation}
+    \omega_q = \omega_{\max} \left| \sin\left( \frac{qa}{2} \right) \right|, \quad \omega_{\max} = \sqrt{\frac{2K}{M}}
+\end{equation}
+其中 $K$ 为弹簧常数，$M$ 为原子质量。
+
+电声耦合采用 SSH 型调制：原子位移调制最近邻跳跃积分，耦合矩阵元为：
+\begin{equation}
+    g_{ij}(q) = \bra{\psi_i} \frac{\partial H}{\partial Q_q} \ket{\psi_j}
+\end{equation}
+在 Bloch 基底 $\ket{k}$ 下，该矩阵元具有解析形式：
+\begin{equation}
+    g(k_i \to k_f; q) \propto (e^{iqa} - 1)(e^{ik_i a} + e^{-ik_f a})
+    \label{eq:g_bloch}
+\end{equation}
+由此可得：
+\begin{enumerate}
+    \item 第一项 $|e^{iqa} - 1|^2 = 4\sin^2(qa/2)$ 在 $q \to 0$ 时趋零（长波声子近似整体平移，对键长调制的耦合不起作用），在 $q = \pi/a$ 时取最大值，因此耦合\textbf{抑制小 $q$、增强 $q \approx \pi$}；
+    \item 第二项 $|e^{ik_i a} + e^{-ik_f a}|^2 = 2 + 2\cos[(k_i + k_f)a]$ 依赖初末态动量之和，产生\textbf{干涉}效应。
+\end{enumerate}
+
+\subsection{$\delta$ 函数展宽}
+
+采用高斯展宽替代严格 $\delta$ 函数：
+\begin{equation}
+    \delta_\sigma(x) = \frac{1}{\sqrt{2\pi}\sigma} \exp\left( -\frac{x^2}{2\sigma^2} \right)
+\end{equation}
+展宽参数 $\sigma$ 模拟有限寿命、无序、热涨落等效应，控制离散谱变化到准连续极限。
+
+\subsection{状态空间与初末态定义}
+
+\textbf{状态空间}：本模型包含 \textbf{1 条电子能带}（一维最近邻紧束缚）和 \textbf{1 条声子色散支}（单原子链声学支）。对于系统尺寸 $N$，电子态空间由 $N$ 个离散 Bloch 态 $\{\ket{k_n}\}$ 构成，对应 $N$ 个离散波矢 $k_n = 2\pi n / (Na)$，$n = 0, 1, \ldots, N-1$。
+
+\textbf{初态选取}：选取带顶附近最接近 $E_{\rm init} = E_{\min} + 0.9 (E_{\max} - E_{\min})$ 的态作为初态 $i_0$。
+
+\textbf{终态判据}：弛豫过程在能量首次满足 $E \leq E_{\rm term}$ 时终止，其中 $E_{\rm term} = E_{\min} + 0.1 (E_{\max} - E_{\min})$（带底附近）。注意终态是一个\textbf{能量阈值区间}，而非单个指定态。
+
+\subsection{能量区间记号}
+
+为便于描述弛豫路径，将能量归一化到 $[0,1]$ 并等分为 4 段，按从带顶到带底编号为 A--D。对于色散 $E(k) = 2t_0 \cos k$（不可约区 $k \in [0,\pi]$），这近似对应固定的 $k$ 区间：A: $[0, \pi/3]$，B: $[\pi/3, \pi/2]$，C: $[\pi/2, 2\pi/3]$，D: $[2\pi/3, \pi]$.
+
+需要强调：A--D 是\textbf{能量段编号}，不是固定的 $k$ 点编号，也不是“多条能带”。“$1 \to 2 \to 4$”等路径记号应理解为能量从高到低的跃迁序列。
+
+图~\ref{fig:model} 展示模型示意图，表~\ref{tab:params} 展示计算参数。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{../results/publication_figures/fig1_model_schematic.png}
+    \caption{一维紧束缚模型示意图。左：单带色散 $E(k) = 2t_0 \cos k$（不可约区 $k \in [0,\pi]$）及能量区间 A--D；右：初态区间（带顶 10\%）与终态阈值区间（带底 10\%）。A--D 为能量段编号（非固定态编号/多能带）。}
+    \label{fig:model}
+\end{figure}
+
+\begin{table}[htbp]
+    \centering
+    \caption{计算参数}
+    \begin{tabular}{lll}
+        \toprule
+        参数      & 符号       & 值                    \\
+        \midrule
+        系统尺寸    & $N$      & 20, 40, 80, 160, 320 \\
+        跳跃积分    & $t_0$    & 1.0                  \\
+        弹簧常数    & $K$      & 1.0                  \\
+        原子质量    & $M$      & 1.0                  \\
+        电声耦合    & $\alpha$ & 0.5                  \\
+        温度      & $kT$     & 0.025（低温）/ 0.5（高温对照） \\
+        展宽      & $\sigma$ & 0.1                  \\
+        KMC 轨迹数 & --       & 1000                 \\
+        初态能量区   & --       & 带顶 10\%              \\
+        终态判据    & --       & 带底 10\%              \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:params}
+\end{table}
+
+
+
+%=============================================================================
+\section{结果}
+%=============================================================================
+
+回顾引言中提出的三个问题：$N$ 增大后弛豫会不会变慢甚至发散？新增中间态会不会让多步路径成为主流？需要哪类声子辅助跃迁？本节通过数值计算给出定量回答。
+
+核心结论可概括为三条：(1) 总跃迁速率 $\Gamma_{i_0}$ 对 $N \geq 40$ 近似为常数量级，弛豫时间不随 $N$ 增长；(2) 多步路径占比 $f_{\rm aux} = P(n_{\rm hop} \geq 4)$ 不随 $N$ 增长，路径类型组成在 $N \geq 40$ 后进入稳定区间；(3) 跃迁集中于布里渊区边界附近的高频声子模式，$N \geq 40$ 时主导声子动量 $q_{\rm peak} \approx \pi$（$N = 20$ 因有限尺寸效应偏离）。
+
+\subsection{标度律验证}
+
+图~\ref{fig:scaling} 展示总跃迁速率 $\Gamma$ 随系统尺寸 $N$ 的变化。采用幂律拟合 $\Gamma = A N^\beta$，排除 $N = 20$ 的有限尺寸效应后，得到 $\beta = 0.03$（$R^2 = 0.74$）。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../results/publication_figures/fig2_scaling_laws.png}
+    \caption{标度律验证。(a) 总跃迁速率 $\Gamma$ 随 $N$ 近似为常数，拟合指数 $\beta = 0.03$；(b) 平均能量步长收敛到有限值；(c) 弛豫时间在 $N \gtrsim 40$ 后稳定。}
+    \label{fig:scaling}
+\end{figure}
+
+\begin{table}[htbp]
+    \centering
+    \caption{总跃迁速率数值结果}
+    \begin{tabular}{cccccc}
+        \toprule
+        $N$      & 20   & 40   & 80   & 160  & 320  \\
+        \midrule
+        $\Gamma$ & 1.06 & 1.49 & 1.57 & 1.57 & 1.59 \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:gamma}
+\end{table}
+
+拟合指数 $|\beta| < 0.15$ 表明总跃迁速率不随系统尺寸显著变化。$N = 20$ 时 $\Gamma$ 偏低属于有限尺寸效应。这与式~\eqref{eq:gamma_scaling} 的理论预期一致。跃迁通道数目的定量分析见附录~\ref{sec:app_channels}。
+
+\subsection{声子动量分布}
+
+图~\ref{fig:qmode}(a) 是跃迁速率在 $(k_i, q)$ 空间的热图（$k_i \in [0, 2\pi)$，$q \in [-\pi, \pi]$）。主要特征：
+
+\begin{enumerate}
+    \item \textbf{$q = 0$ 白线}：$q = 0$ 处 $|e^{iqa}-1|^2 = 0$，跃迁速率严格为零，形成一条水平白线；
+    \item \textbf{四条斜向亮带，上下错开}：亮带斜率约为 $-1$，对应 $k_f = k_i + q \approx \text{const}$。$q > 0$ 与 $q < 0$ 区域的亮带在 $q = 0$ 附近并不对齐，而是错开约 $\pm 0.5$。这是因为整体速率由耦合强度、能量匹配、玻色因子共同决定，各因素的竞争使最亮位置偏离简单的 $k_f = \text{const}$ 线。
+\end{enumerate}
+
+图~\ref{fig:qmode}(b) 展示各 $q$ 模式的总跃迁速率 $\sum_i W_{i,i+q}$，峰值位于布里渊区边界（$q \approx \pm\pi$）。图~\ref{fig:qmode}(c) 显示主导声子动量 $q_{\rm peak}$ 在 $N \geq 40$ 后收敛到 $\pi$。由式~\eqref{eq:g_bloch} 可知，$|e^{iqa} - 1|^2$ 在 $q = \pi$ 时最大，同时声子色散 $\omega_q \propto |\sin(qa/2)|$ 也在 $q \approx \pi$ 最大，因此\textbf{耦合强度与声子频率均在布里渊区边界达到峰值}。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.98\textwidth]{../results/publication_figures/fig9_q_distribution.png}
+    \caption{声子动量分布。(a) 跃迁速率在 $(k_i, q)$ 空间的热图：$q = 0$ 处因 $|e^{iqa}-1|^2 = 0$ 形成突兀白线；四条斜向亮带（斜率 $-1$）在 $q = 0$ 附近上下错开；(b) 各 $q$ 模式的总跃迁速率，峰值在 $q \approx \pm\pi$；(c) 主导声子动量 $q_{\rm peak}$ 在 $N \geq 40$ 后收敛到 $\pi$。}
+    \label{fig:qmode}
+\end{figure}
+
+\subsection{路径统计}
+
+为定量刻画弛豫路径的复杂度，定义以下统计量：
+\begin{itemize}
+    \item \textbf{跳数} $n_{\rm hop}$：从初态到满足终止条件的跃迁次数；
+    \item \textbf{多步路径占比} $f_{\rm aux} := P(n_{\rm hop} \geq 4)$：需要 4 步或更多才能完成弛豫的轨迹占比；
+    \item \textbf{吸收占比} $r_{\rm abs}$：所有跃迁中声子吸收（$\Delta E < 0$）的比例。
+\end{itemize}
+
+图~\ref{fig:path} 展示路径统计结果，对比低温（$kT = 0.025$）与高温（$kT = 0.5$）两种情况：
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{../results/publication_figures/fig3_path_statistics.png}
+    \caption{路径统计（低温/高温对比）。(a) 跳数分布的关键概率：$P(n=3)$ 与 $f_{\rm aux} = P(n \geq 4)$ 随 $N$ 的变化；(b) 平均跳数 $\mean{n_{\rm hop}}$；(c) 能量步长分布；(d) 吸收占比 $r_{\rm abs}$ 随 $N$ 的变化。}
+    \label{fig:path}
+\end{figure}
+\begin{itemize}
+    \item 低温下 $P(n = 3) \approx 99\%$，$f_{\rm aux} \approx 1\%$，$\mean{n_{\rm hop}} \approx 3.0$；
+    \item 高温下步数分布变宽，$\mean{n_{\rm hop}} \approx 3.9$，$f_{\rm aux} \approx 33\%$；
+    \item $f_{\rm aux}$ 与 $r_{\rm abs}$ 均\textbf{不随 $N$ 增长}， $N$ 增大带来更多中间态，但它们并未被有效利用。
+\end{itemize}
+
+\subsection{路径类型分析}
+
+仅用跳数统计还无法回答“哪类中间态路径更显著”（例如 A$\to$B$\to$D 与 A$\to$C$\to$D 哪个更常见），因此我们进一步对每条轨迹做粗粒化的路径类型统计：将轨迹映射为能量区间序列（A--D），并压缩连续重复得到路径类型。
+
+图~\ref{fig:motif} 展示不同 $N$ 下路径类型的组成（低温与高温对照）。结果有两个要点：
+
+\textbf{(i) 低温下}，路径几乎完全由 A$\to$B$\to$C$\to$D 与 A$\to$B$\to$D 两类构成，A$\to$C$\to$D 仅为千分量级。从 $N = 20$ 的有限尺寸点到 $N \geq 40$ 后，A$\to$B$\to$D 的占比提高并进入相对稳定区间（约 0.36--0.49），未呈现随 $N$ 继续增长的趋势。
+
+\textbf{(ii) 高温下}，由于声子吸收引入回跳，出现一定比例的“绕行/回跳”路径（归入 Other，约 15\%），同时 A$\to$C$\to$D 的占比上升到百分量级，但同样未随 $N$ 增大系统性漂移。
+
+总体而言，扩胞确实引入更多候选中间态，但在本模型与参数范围内，\textbf{有效的路径结构没有随 $N$ 走向更复杂}。代表性轨迹与速率矩阵结构的详细分析见附录~\ref{sec:app_traj} 和~\ref{sec:app_rate_matrix}。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../results/publication_figures/fig10_path_motifs.png}
+    \caption{路径类型随系统尺寸的变化（能量区间粗粒化；A--D 为能量段编号而非具体态编号）。将能量归一化并等分为 4 段，按从带顶到带底编号为 A--D；每条轨迹映射为能量区间序列并压缩连续重复得到路径类型。图中展示 A$\to$D、A$\to$B$\to$D、A$\to$C$\to$D、A$\to$B$\to$C$\to$D 四类代表路径，其余归入 Other（含回跳等非单调序列）。}
+    \label{fig:motif}
+\end{figure}
+
+%=============================================================================
+\section{讨论}
+%=============================================================================
+
+\subsection{候选路径与有效路径}
+
+扩胞引入更多离散中间态，可写出的路径组合数快速增长。然而数值结果表明，\textbf{有效路径并未随之爆炸}。原因在于选择定则的约束：能量守恒、动量守恒与声子色散共同限制了每一步的可能目标。速率矩阵呈稀疏带状结构（附录~\ref{sec:app_rate_matrix}），新增中间态大多“存在但不被访问”。
+
+从通道分析（附录~\ref{sec:app_channels}）看，前 3--7 个目标态即覆盖 90\% 以上的跃迁概率，这与路径统计中多步路径占比不随 $N$ 增长的结论相吻合。
+
+\subsection{局限性}
+
+\begin{itemize}
+    \item \textbf{模型简化}：简谐声子、单电子图像、一维最近邻紧束缚；
+    \item \textbf{唯象参数}：展宽 $\sigma$ 需满足准连续条件（$\sigma \gtrsim 0.1$）；
+    \item \textbf{路径分辨率有限}：能量区间统计是粗粒化的，不区分具体的 $k$ 点;
+    \item \textbf{三维外推}：三维材料需额外考虑多支色散与多声子过程。
+\end{itemize}
+
+%=============================================================================
+\section{结论}
+%=============================================================================
+
+本文通过一维紧束缚模型的数值计算，探索了带内弛豫的基本规律。数值结果表明：
+
+\begin{enumerate}
+    \item \textbf{弛豫速率}：初态的总跃迁速率 $\Gamma_{i_0}(N) \propto N^\beta$， $\beta = 0.03 \pm 0.01$，不随系统尺寸发散；
+    \item \textbf{多步路径占比}：$f_{\rm aux}(N) = P(n_{\rm hop} \geq 4)$ 不随 $N$ 增长（低温约 1\%，高温约 33\%），平均跳数 $\mean{n_{\rm hop}}$ 保持稳定；
+    \item \textbf{主导声子动量}：$N \geq 40$ 时 $q_{\rm peak} \approx \pi$，对应布里渊区边界的高频声子模式。
+\end{enumerate}
+\textbf{参数稳健性}（详见附录~\ref{sec:app_sensitivity}）：上述结论在 $kT \in [0.01, 0.1]$、$\alpha \in [0.2, 1.0]$ 范围内稳定；但要求展宽参数 $\sigma \gtrsim 0.1$ 以保证离散能级的准连续近似有效。ME 与 KMC 两种方法的一致性验证见附录~\ref{sec:app_consistency}。
+
+%=============================================================================
+\newpage
+\appendix
+\section{附录：计算流程与代码结构}
+%=============================================================================
+
+\subsection{计算依赖树}
+
+\begin{verbatim}
+solve_master_equation(W, P0, t_span)           [master_equation.py]
+|-- W = build_rate_matrix(N, params)           [fermi_golden_rule.py]
+|   |-- k_grid = 2*pi*n/(Na), n = 0,1,...,N-1
+|   |-- E_grid = 2*t0*cos(ka)                  [电子色散]
+|   |-- for each (i,j):
+|   |   |-- dE = E_i - E_j
+|   |   |-- q = k_j - k_i (mod 2*pi/a)         [动量守恒，代码通过 j=(i+q) 构造]
+|   |   |-- w_q = w_max*|sin(qa/2)|            [声子色散]
+|   |   |-- delta_sigma(dE - w_q) or (dE + w_q) [能量守恒]
+|   |   |-- |g(k_i -> k_j; q)|^2
+|   |   +-- W_ij = (2*pi/N)*|g|^2*delta * [n_B+1 or n_B]
+|   +-- return W, k_grid, E_grid
+|-- P_inf = stationary_distribution(W)         [SVD 零空间]
+|-- <E>(t) = sum_i E_i * P_i(t)
++-- tau_ME = first t s.t. <E(t)> <= E_eq + theta*(<E(0)>-E_eq)
+
+run_trajectory(W, E, i0)                       [kinetic_monte_carlo.py]
+|-- Gillespie algorithm:
+|   |-- Gamma_i = sum_j W_ij                   [总逃逸速率]
+|   |-- dt = -ln(r1) / Gamma_i                 [等待时间]
+|   +-- j = sample(W_ij / Gamma_i)             [跃迁目标]
++-- 记录 {n_hops, step_sizes, t_total}
+\end{verbatim}
+
+\subsection{关键公式与代码对应}
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabular}{p{3.5cm}p{5cm}p{5cm}}
+        \toprule
+        \textbf{物理量}    & \textbf{公式/定义}                                    & \textbf{代码函数}                                            \\
+        \midrule
+        电子色散            & $E(k) = 2t_0 \cos(ka)$                            & \texttt{tb\_electron\_1band.dispersion}                  \\[0.3em]
+        声子色散            & $\omega_q = \omega_{\max}|\sin(qa/2)|$            & \texttt{phonon\_1atom.dispersion\_monatomic}             \\[0.3em]
+        展宽 $\delta$     & 高斯展宽                                              & \texttt{fermi\_golden\_rule.delta\_broadened}            \\[0.3em]
+        FGR 速率矩阵        & $W_{ij} = W_{i \to j}$                            & \texttt{fermi\_golden\_rule.build\_rate\_matrix}         \\[0.3em]
+        主方程生成矩阵         & $Q_{ii} = -\sum_j W_{i \to j}$                    & \texttt{master\_equation.generator\_from\_rates}         \\[0.3em]
+        稳态分布            & $\mathbf{Q}^T \mathbf{P} = 0$, $\sum P = 1$       & \texttt{master\_equation.stationary\_distribution}       \\[0.3em]
+        $\tau_{\rm ME}$ & 能量衰减到阈值                                           & \texttt{master\_equation.relaxation\_time\_from\_energy} \\[0.3em]
+        Gillespie 单步    & 抽样 $(dt, \text{next})$                            & \texttt{kinetic\_monte\_carlo.gillespie\_step}           \\[0.3em]
+        显著通道数           & $D_{\rm eff} = \#\{j \mid p_{ij} > \varepsilon\}$ & \texttt{channel\_analysis.effective\_out\_degree}        \\[0.3em]
+        参与数             & $D_{\rm pr} = 1/\sum p_{ij}^2$                    & \texttt{channel\_analysis.participation\_ratio}          \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{数值实现要点}
+
+\begin{enumerate}
+    \item \textbf{稳态分布求解}：采用 SVD 分解 $\mathbf{Q}^T$ 的零空间，避免直接求逆的数值不稳定性；
+    \item \textbf{初态/终态一致性}：ME 与 KMC 使用相同的初态选取与终止阈值；
+    \item \textbf{统计收敛}：KMC 默认 1000 条独立轨迹，误差棒使用标准差。
+\end{enumerate}
+
+\subsection{复现脚本}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{脚本}                             & \textbf{功能}                        \\
+        \midrule
+        \texttt{run\_scaling\_experiment.py}    & 主实验（$N$ 扫描 + 路径统计）                 \\
+        \texttt{run\_sensitivity.py}            & 参数稳健性检验（$\sigma$/$kT$/$\alpha$ 扫描） \\
+        \texttt{generate\_core\_figures.py}     & 核心图表                               \\
+        \texttt{generate\_appendix\_figures.py} & 附录图表                               \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+%=============================================================================
+\section{附录：补充分析}
+\label{sec:appendix_supp}
+%=============================================================================
+
+\subsection{跃迁通道数目分析}
+\label{sec:app_channels}
+
+为量化速率矩阵的稀疏程度，定义以下指标：
+\begin{itemize}
+    \item \textbf{跃迁概率}：$p_{ij} = W_{i \to j} / \Gamma_i$，即归一化的跃迁速率；
+    \item \textbf{显著通道数}：$D_{\rm eff}(i) = \#\{j \mid p_{ij} > 0.01\}$，即从态 $i$ 出发、跃迁概率超过 1\% 的目标态个数；
+    \item \textbf{参与数}：$D_{\rm pr}(i) = 1 / \sum_j p_{ij}^2$，类似 IPR（inverse participation ratio），用于度量跃迁概率的分散程度。若跃迁均匀分布到 $M$ 个态，则 $D_{\rm pr} = M$；若集中在单一通道，则 $D_{\rm pr} = 1$。
+\end{itemize}
+
+图~\ref{fig:channels} 展示通道数目分析。虽然 $D_{\rm eff}$ 和 $D_{\rm pr}$ 随 $N$ 有所增大，但远小于“全连通”
+情形。若无选择定则约束，每个态可跃迁到其它所有 $N-1$ 个态。累积概率曲线显示，前 3--7 个通道即可覆盖 90\% 以上的跃迁概率，说明跃迁高度集中于少数目标态。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{../results/publication_figures/fig8_effective_channels.png}
+    \caption{跃迁通道数目分析。(a) 显著通道数 $D_{\rm eff}$ 随归一化能量的分布，不同颜色对应不同 $N$；能带边缘的态通道数较多，带中部较少。(b) 平均显著通道数 $\mean{D_{\rm eff}}$（蓝）与参与数 $\mean{D_{\rm pr}}$（橙）随 $N$ 的变化，灰色虚线为全连通预期 $N-1$；两者均远小于 $N$，表明速率矩阵是稀疏的。(c) 累积概率曲线：将各态的跃迁目标按概率从大到小排列，高能态约 3 个通道即达 90\%，低能态约需 7 个。}
+    \label{fig:channels}
+\end{figure}
+
+\subsection{代表性轨迹}
+\label{sec:app_traj}
+
+图~\ref{fig:traj} 展示 KMC 代表性轨迹。能量随时间呈阶梯式下降（“跨栏式”弛豫），低温下以声子发射为主，不同 $N$ 的轨迹形态相近。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../results/publication_figures/fig4_trajectories.png}
+    \caption{KMC 代表性轨迹。低温下以声子发射为主，不同 $N$ 的轨迹形态相近。}
+    \label{fig:traj}
+\end{figure}
+
+\subsection{速率矩阵结构}
+\label{sec:app_rate_matrix}
+
+图~\ref{fig:rate_matrix}(a,b) 展示速率矩阵 $W_{ij}$ 的热图（$\log_{10}$ 色标，$N=60$）。主要特征如下：
+
+\begin{enumerate}
+    \item \textbf{主对角线空白}：$i = j$ 处 $W_{ii} = 0$（无自跃迁），且 $q \to 0$ 时耦合项 $|e^{iqa}-1|^2 \to 0$，导致对角线及其附近严格为零或很弱；
+    \item \textbf{反对角线方向的两条亮带}：最显著的特征是沿左下到右上方向的两条亮带，位于 $i+j \approx 50$ 与 $i+j \approx 70$。由式~\eqref{eq:g_bloch} 的干涉项 $|e^{ik_i a}+e^{-ik_f a}|^2 = 2+2\cos[(k_i+k_f)a]$，当 $k_i + k_f = 2\pi$ 时取最大值，对应 $i+j = N = 60$（因为 $k = 2\pi \cdot \text{index}/N$）。但整体速率还需乘以能量匹配因子与 $|e^{iqa}-1|^2$ 权重，因此最亮位置被推移到 $i+j = 60$ 附近的两条偏移脊线（$\approx 50$ 与 $\approx 70$）；
+    \item \textbf{低温下一支不完整}：低温时 $n_q \ll 1$，吸收项整体被压制，导致其中一条亮带出现缺段；高温时吸收增强，缺段被补齐，两条亮带均完整可见，图形趋于对称。这与图~\ref{fig:rate_matrix}(c) 中吸收占比随温度的变化一致。
+\end{enumerate}
+
+图~\ref{fig:rate_matrix}(d) 通过细致平衡验证数值实现的正确性：高温下 $\ln(W_{ij}/W_{ji})$ 对 $(E_j - E_i)/kT$ 的斜率接近理论值 $-1$。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{../results/publication_figures/fig5_rate_matrix.png}
+    \caption{速率矩阵分析。(a,b) 低温与高温的速率矩阵 $\log_{10}(W_{ij})$，呈带状结构；(c) 吸收占比随能量的变化；(d) 细致平衡验证。}
+    \label{fig:rate_matrix}
+\end{figure}
+
+\subsection{参数稳健性检验}
+\label{sec:app_sensitivity}
+
+前述结果基于 baseline 参数（$\sigma = 0.1$，$kT = 0.025$，$\alpha = 0.5$）。本节通过单因子扫描检验结论的稳健性。
+
+图~\ref{fig:sensitivity} 展示标度指数 $\beta$ 对三个参数的依赖。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{../results/publication_figures/fig6_sensitivity.png}
+    \caption{参数稳健性检验：标度指数 $\beta$ 对三个参数的依赖。(a) 展宽 $\sigma$：$\sigma < 0.07$ 时 O(1) 失效；(b) 温度 $kT$：在 $[0.01, 0.1]$ 范围内稳定；(c) 电声耦合 $\alpha$：在 $[0.2, 1.0]$ 范围内稳定。}
+    \label{fig:sensitivity}
+\end{figure}
+
+\begin{table}[htbp]
+    \centering
+    \caption{展宽参数对标度指数的影响}
+    \begin{tabular}{ccc}
+        \toprule
+        $\sigma$      & $\beta$       & 状态                    \\
+        \midrule
+        0.05          & 0.51          & 失效（$|\beta| > 0.15$）  \\
+        0.07          & 0.17          & 临界                    \\
+        \textbf{0.10} & \textbf{0.03} & \textbf{baseline（稳定）} \\
+        0.15          & 0.005         & 稳定                    \\
+        0.20          & 0.005         & 稳定                    \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:sigma}
+\end{table}
+
+$\sigma$ 是控制离散能级“准连续化”程度的关键参数。当 $\sigma$ 过小时（$< 0.07$），能量匹配更苛刻，导致 $\beta$ 偏大；$\sigma = 0.07$ 时虽然 $\beta$ 已降至 $0.17$ 左右，但仍略超过 $|\beta| < 0.15$ 判据。稳妥起见，选取 $\sigma \gtrsim 0.1$（baseline 取值）以保证 O(1) 结论可靠。
+
+在 $kT \in [0.01, 0.1]$ 与 $\alpha \in [0.2, 1.0]$ 范围内，$\beta \approx 0.03 \pm 0.01$，结论完全稳定。
+
+\subsection{ME 与 KMC 一致性验证}
+\label{sec:app_consistency}
+
+图~\ref{fig:consistency} 展示两种方法的一致性验证。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../results/publication_figures/fig7_consistency.png}
+    \caption{ME 与 KMC 一致性。(a) 归一化弛豫时间 $\tau/\tau(N=80)$ 随 $N$ 的变化；(b) $\tau_{\rm ME}$ 与 $\tau_{\rm KMC}$ 的条形图对比；(c) 稳态分布与 Boltzmann 分布的 KL 散度。}
+    \label{fig:consistency}
+\end{figure}
+
+$\tau_{\rm ME}$ 与 $\tau_{\rm KMC}$ 绝对值相差约 5--7 倍，这源于定义差异：$\tau_{\rm ME}$ 采用阈值 $\theta = 0.01$（能量衰减到初始偏移的 1\%），若假设指数衰减 $\exp(-t/\tau)$，则 $\tau_{\rm ME}/\tau \approx -\ln(0.01) \approx 4.6$；而 $\tau_{\rm KMC}$ 为首达时间，两者物理含义不同。
+
+尽管绝对值不同，归一化后的曲线显示两者在 $N \geq 40$ 后快速收敛到常数量级，\textbf{均不发散}。稳态分布与 Boltzmann 分布的 KL 散度在全部测试尺寸下均保持 $10^{-2}$ 量级（展宽与截断效应导致的系统偏差），说明稳态分布与理论预期基本一致。
+
+\end{document}
