@@ -1,12 +1,13 @@
-"""生成核心图表
+"""生成正文（核心）图表。
 
-核心图表：
+正文建议保留 5 张图（其中 Fig1 由附录脚本生成/手工微调）：
 - Fig 2: 标度律（添加 N^0/N^1 参考线）
-- Fig 4: KMC 轨迹
-- Fig 8: 有效通道数（新增）
-- Fig 9: q 模式分布（新增）
+- Fig 3: 路径统计（2×2）
+- Fig 9: q 分布（动量选择性）
+- Fig10: 路径 motif 随 N（回答“124/134 是否替换”）
 """
 
+import json
 import sys
 from pathlib import Path
 from typing import Dict
@@ -19,14 +20,10 @@ repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
 
 from src.channel_analysis import (
-    cumulative_channel_fraction,
-    effective_out_degree,
-    participation_ratio,
     q_ki_heatmap,
     q_mode_distribution,
 )
 from src.fermi_golden_rule import build_rate_matrix
-from src.kinetic_monte_carlo import run_trajectory
 from src.relaxation_analysis import fit_power_law
 
 COLORS = {
@@ -160,152 +157,344 @@ def generate_fig2_scaling_laws(output_dir: Path, data: Dict):
     plt.close(fig)
     print("  [✓] Fig 2 - Scaling Laws")
 
-
-def generate_fig4_trajectories(output_dir: Path):
-    """Fig 4: KMC 轨迹（多 N 对比）。"""
-    fig, axes = plt.subplots(2, 2, figsize=(8, 6))
-
-    N_list = [20, 40, 80, 160]
-    colors_traj = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
-
-    for idx, N in enumerate(N_list):
-        ax = axes[idx // 2, idx % 2]
-
-        W, k_grid, E_grid = build_rate_matrix(n_cells=N, delta_mode="gaussian", **PHYSICS_PARAMS)
-        E = np.array(E_grid)
-        E_min, E_max = E.min(), E.max()
-        E_init = E_min + 0.9 * (E_max - E_min)
-        initial_state = int(np.argmin(np.abs(E - E_init)))
-        E_term = E_min + 0.1 * (E_max - E_min)
-
-        def terminal_cond(state, energy, time):
-            return energy <= E_term
-
-        rng = np.random.default_rng(42 + idx)
-        for t_idx in range(5):
-            traj = run_trajectory(W=W, E_grid=E, initial_state=initial_state,
-                                  terminal_condition=terminal_cond, max_steps=10000, rng=rng)
-            ax.step(traj.times, traj.energies, where="post", color=colors_traj[t_idx], alpha=0.7, lw=1.2)
-
-        ax.axhline(E_term, color=COLORS["gray"], ls="--", lw=1, label="Terminal")
-        ax.axhline(E_init, color=COLORS["gray"], ls=":", lw=1, label="Initial")
-        ax.set_xlabel(r"Time [$\hbar/t_0$]")
-        ax.set_ylabel(r"Energy [$t_0$]")
-        ax.set_title(f"N = {N}")
-
-        if idx == 0:
-            handles, labels = ax.get_legend_handles_labels()
-
-    plt.suptitle("KMC Trajectories: Staircase Relaxation", fontsize=12, y=1.0)
-    if "handles" in locals():
-        fig.legend(handles, labels, loc="upper center", ncol=2, frameon=True, framealpha=0.9,
-                   bbox_to_anchor=(0.5, 0.95))
-    plt.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(output_dir / "fig4_trajectories.png")
-    plt.close(fig)
-    print("  [✓] Fig 4 - Trajectories")
+def _load_json_scalar(val):
+    """从 np.load 的标量/字符串中读取 JSON。"""
+    if isinstance(val, np.ndarray) and val.shape == ():
+        val = val.item()
+    if isinstance(val, bytes):
+        val = val.decode("utf-8")
+    return json.loads(str(val))
 
 
-def generate_fig8_effective_channels(output_dir: Path):
-    """Fig 8: 有效通道数（核心新增图）。"""
-    fig, axes = plt.subplots(1, 3, figsize=(10, 3.5))
+def generate_fig3_path_statistics(output_dir: Path, data: dict):
+    """Fig 3: 路径统计（2×2）。"""
+    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
-    N_list = [40, 80, 160, 320]
-    colors = [COLORS["primary"], COLORS["secondary"], COLORS["tertiary"], COLORS["quaternary"]]
+    fig.suptitle(
+        "Path statistics: no combinatorial explosion (effective paths remain O(1))",
+        fontsize=11,
+        y=0.98,
+    )
 
-    all_D_eff = {}
-    all_D_pr = {}
-    all_E = {}
+    N_values = data["N"]
 
-    for i, N in enumerate(N_list):
-        W, k_grid, E_grid = build_rate_matrix(n_cells=N, delta_mode="gaussian", **PHYSICS_PARAMS)
-        E = np.array(E_grid)
-        D_eff = effective_out_degree(W, epsilon=0.01)
-        D_pr = participation_ratio(W)
-        all_D_eff[N] = D_eff
-        all_D_pr[N] = D_pr
-        all_E[N] = E
+    def _read_hist(prefix: str, idx: int, max_hops: int = 12) -> np.ndarray:
+        key = f"{prefix}_{idx}_n_hops_histogram"
+        hist = np.array(data.get(key, np.zeros(1, dtype=int)))
+        if hist.ndim != 1:
+            hist = hist.ravel()
+        if len(hist) < max_hops:
+            hist = np.pad(hist, (0, max_hops - len(hist)))
+        return hist[:max_hops]
 
-    # (a) 有效出度 vs 能量
-    ax = axes[0]
-    ax.set_title("(a) Effective Out-Degree vs Energy")
-    for i, N in enumerate(N_list):
-        E_norm = (all_E[N] - all_E[N].min()) / (all_E[N].max() - all_E[N].min())
-        ax.scatter(E_norm, all_D_eff[N], c=colors[i], s=10, alpha=0.6, label=f"N={N}")
-    ax.set_xlabel(r"Normalized energy $(E - E_{\min})/(E_{\max} - E_{\min})$")
-    ax.set_ylabel(r"$D_{\rm eff}$ (channels with $p_{ij} > 1\%$)")
-    handles_n, labels_n = ax.get_legend_handles_labels()
-    ax.set_ylim(0, max(max(all_D_eff[N]) for N in N_list) + 2)
+    def _read_steps(prefix: str, idx: int) -> np.ndarray:
+        key = f"{prefix}_{idx}_step_sizes"
+        if key not in data:
+            return np.array([], dtype=float)
+        return np.asarray(data[key], dtype=float)
 
-    # (b) 平均有效出度 vs N
-    ax = axes[1]
-    ax.set_title("(b) Mean Effective Out-Degree vs N")
-    mean_D_eff = [np.mean(all_D_eff[N]) for N in N_list]
-    mean_D_pr = [np.mean(all_D_pr[N]) for N in N_list]
+    has_hit = any(f"path_stats_hiT_{i}_n_hops_histogram" in data for i in range(len(N_values)))
+    kT_low = float(data.get("kT", PHYSICS_PARAMS["kT"]))
+    kT_high = float(data.get("path_stats_hiT_kT", np.nan)) if has_hit else np.nan
 
-    ax.plot(N_list, mean_D_eff, "o-", color=COLORS["primary"], markersize=8,
-            label=r"$\langle D_{\rm eff} \rangle$ (1% threshold)")
-    ax.plot(N_list, mean_D_pr, "s-", color=COLORS["secondary"], markersize=8,
-            label=r"$\langle D_{\rm pr} \rangle$ (participation ratio)")
+    # (a) 尾部概率 vs N：P(n=3)、P(n>=4)
+    ax = axes[0, 0]
+    ax.set_title("(a) Hop-count tail vs N")
 
-    # 添加 N-1 参考线（naive 预期）
-    ax.plot(N_list, [n - 1 for n in N_list], "--", color=COLORS["gray"], lw=1.5,
-            label="N-1 (naive: all channels)")
+    p3_low, p4p_low = [], []
+    p3_hi, p4p_hi = [], []
 
-    ax.set_xlabel("System size N")
-    ax.set_ylabel("Mean effective channels")
+    for i in range(len(N_values)):
+        h = _read_hist("path_stats", i)
+        p = h / max(h.sum(), 1)
+        p3_low.append(float(p[3]) if len(p) > 3 else 0.0)
+        p4p_low.append(float(np.sum(p[4:])) if len(p) > 4 else 0.0)
+
+        if has_hit:
+            hh = _read_hist("path_stats_hiT", i)
+            pp = hh / max(hh.sum(), 1)
+            p3_hi.append(float(pp[3]) if len(pp) > 3 else 0.0)
+            p4p_hi.append(float(np.sum(pp[4:])) if len(pp) > 4 else 0.0)
+
+    ax.plot(N_values, np.array(p3_low) * 100, "o-", color=COLORS["primary"], label=f"Low T (kT={kT_low:.3g}): P(n=3)")
+    ax.plot(N_values, np.array(p4p_low) * 100, "s--", color=COLORS["primary"], alpha=0.8, label=f"Low T (kT={kT_low:.3g}): P(n≥4)")
+    if has_hit:
+        ax.plot(N_values, np.array(p3_hi) * 100, "o-", color=COLORS["secondary"], label=f"High T (kT={kT_high:.3g}): P(n=3)")
+        ax.plot(N_values, np.array(p4p_hi) * 100, "s--", color=COLORS["secondary"], alpha=0.8, label=f"High T (kT={kT_high:.3g}): P(n≥4)")
+
     ax.set_xscale("log")
-    ax.xaxis.set_major_locator(FixedLocator(N_list))
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):d}" if x in N_list else ""))
-    ax.minorticks_off()
-    ax.legend(fontsize=7, loc="upper left", frameon=True, framealpha=0.9)
+    ax.set_xlabel("System size N")
+    ax.set_ylabel("Probability mass (%)")
+    ax.set_ylim(0, 105)
+    ax.legend(fontsize=7, loc="best")
 
-    # 添加注释
-    ax.text(0.98, 0.15,
-        f"O(1) evidence:\n"
-        f"$D_{{\\rm eff}}$ ≈ {np.mean(mean_D_eff):.1f}\n"
-        f"$D_{{\\rm pr}}$ ≈ {np.mean(mean_D_pr):.1f}",
-        transform=ax.transAxes, ha="right", va="bottom", fontsize=8,
-        bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8))
+    ax.text(
+        0.02,
+        0.1,
+        "Key check: tail P(n≥4) does NOT grow with N\n→ no evidence of combinatorial explosion",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=9,
+        bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
+    )
 
-    # (c) 累积概率曲线
-    ax = axes[2]
-    ax.set_title("(c) Cumulative Channel Probability")
+    # (b) 平均跳数 vs N（带误差棒）
+    ax = axes[0, 1]
+    ax.set_title("(b) Mean hop count vs N")
+
+    mean_low, std_low = [], []
+    mean_hi, std_hi = [], []
+    for i in range(len(N_values)):
+        mean_low.append(float(data[f"path_stats_{i}_n_hops_mean"]))
+        std_low.append(float(data[f"path_stats_{i}_n_hops_std"]))
+        if has_hit:
+            mean_hi.append(float(data[f"path_stats_hiT_{i}_n_hops_mean"]))
+            std_hi.append(float(data[f"path_stats_hiT_{i}_n_hops_std"]))
+
+    ax.errorbar(
+        N_values,
+        mean_low,
+        yerr=std_low,
+        fmt="o-",
+        color=COLORS["primary"],
+        markersize=7,
+        capsize=4,
+        lw=2,
+        label=f"Low T (kT={kT_low:.3g})",
+    )
+    if has_hit:
+        ax.errorbar(
+            N_values,
+            mean_hi,
+            yerr=std_hi,
+            fmt="s-",
+            color=COLORS["secondary"],
+            markersize=7,
+            capsize=4,
+            lw=2,
+            label=f"High T (kT={kT_high:.3g})",
+        )
+
+    ax.set_xscale("log")
+    ax.set_xlabel("System size N")
+    ax.set_ylabel(r"$\langle n_{\rm hop} \rangle$")
+    ax.legend(fontsize=7, loc="best")
+
+    cv_low = float(np.std(mean_low) / np.mean(mean_low)) if np.mean(mean_low) > 0 else 0.0
+    msg = f"Low T CV = {cv_low:.3f}"
+    if has_hit:
+        cv_hi = float(np.std(mean_hi) / np.mean(mean_hi)) if np.mean(mean_hi) > 0 else 0.0
+        msg += f"\nHigh T CV = {cv_hi:.3f}"
+    ax.text(
+        0.02,
+        0.55,
+        msg + "\nNo growth with N",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=9,
+        bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
+    )
+
+    # (c) ΔE（带符号）分布：用代表性 N 展示低温/高温差异
+    ax = axes[1, 0]
 
     N_demo = 80
-    W, k_grid, E_grid = build_rate_matrix(n_cells=N_demo, delta_mode="gaussian", **PHYSICS_PARAMS)
-    E = np.array(E_grid)
+    try:
+        idx_demo = int(np.where(np.asarray(N_values, dtype=int) == N_demo)[0][0])
+    except Exception:
+        idx_demo = 0
+        N_demo = int(np.asarray(N_values, dtype=int)[0])
 
-    # 选几个不同能量的态
-    E_norm = (E - E.min()) / (E.max() - E.min())
-    idx_high = np.argmin(np.abs(E_norm - 0.9))
-    idx_mid = np.argmin(np.abs(E_norm - 0.5))
-    idx_low = np.argmin(np.abs(E_norm - 0.1))
+    ax.set_title(f"(c) Signed energy step distribution (N={N_demo})")
 
-    for state_idx, label, color in [(idx_high, "High E", COLORS["highlight"]),
-                                     (idx_mid, "Mid E", COLORS["secondary"]),
-                                     (idx_low, "Low E", COLORS["primary"])]:
-        k_vals, cum_prob = cumulative_channel_fraction(W, state_idx)
-        ax.plot(k_vals[:20], cum_prob[:20], "o-", color=color, markersize=4, label=label)
+    steps_low = _read_steps("path_stats", idx_demo)
+    steps_hi = _read_steps("path_stats_hiT", idx_demo) if has_hit else np.array([], dtype=float)
 
-    ax.axhline(0.9, color=COLORS["gray"], ls="--", lw=1, label="90% threshold")
-    ax.set_xlabel("Number of top channels k")
-    ax.set_ylabel("Cumulative probability")
-    ax.legend(fontsize=7, loc="lower right")
-    ax.set_xlim(0, 15)
-    ax.set_ylim(0, 1.05)
+    def _plot_steps(steps: np.ndarray, color: str, label: str):
+        if steps.size == 0:
+            return
+        bins = np.linspace(-2.0, 2.0, 81)
+        ax.hist(steps, bins=bins, color=color, alpha=0.45, edgecolor="white", label=label)
 
-    ax.text(0.4, 0.4,
-        "Few channels capture\nmost transition probability",
-        transform=ax.transAxes, ha="left", va="bottom", fontsize=8,
-        bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
+    _plot_steps(steps_low, COLORS["primary"], f"Low T (kT={kT_low:.3g})")
+    if has_hit:
+        _plot_steps(steps_hi, COLORS["secondary"], f"High T (kT={kT_high:.3g})")
 
-    fig.legend(handles_n, labels_n, loc="upper center", ncol=4, frameon=True, framealpha=0.9,
-               bbox_to_anchor=(0.5, 1.02))
-    plt.tight_layout(rect=(0, 0, 1, 0.93))
-    fig.savefig(output_dir / "fig8_effective_channels.png")
+    ax.axvline(0.0, color=COLORS["gray"], ls="--", lw=1)
+    omega_max = np.sqrt(2 * PHYSICS_PARAMS["k_spring"] / PHYSICS_PARAMS["mass"])
+    ax.axvline(omega_max, color=COLORS["tertiary"], ls=":", lw=2, label=r"$\omega_{\max}$")
+    ax.axvline(-omega_max, color=COLORS["tertiary"], ls=":", lw=2)
+    ax.set_xlabel(r"$\Delta E = E_{\rm before} - E_{\rm after}$ [$t_0$]  (emission>0, absorption<0)")
+    ax.set_ylabel("Count")
+    ax.legend(fontsize=7, loc="upper left")
+
+    def _abs_frac(steps: np.ndarray) -> float:
+        if steps.size == 0:
+            return 0.0
+        return float(np.mean(steps < 0.0))
+
+    txt = f"N={N_demo}\nLow T absorption = {_abs_frac(steps_low)*100:.2f}%"
+    if has_hit:
+        txt += f"\nHigh T absorption = {_abs_frac(steps_hi)*100:.2f}%"
+    ax.text(
+        0.02,
+        0.5,
+        txt,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9,
+        bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.85),
+    )
+
+    # (d) 吸收占比 vs N（低温 vs 高温）
+    ax = axes[1, 1]
+    ax.set_title("(d) Absorption fraction vs N")
+
+    abs_low, abs_hi = [], []
+    for i in range(len(N_values)):
+        s = _read_steps("path_stats", i)
+        abs_low.append(_abs_frac(s) * 100)
+        if has_hit:
+            sh = _read_steps("path_stats_hiT", i)
+            abs_hi.append(_abs_frac(sh) * 100)
+
+    ax.plot(N_values, abs_low, "o-", color=COLORS["primary"], label=f"Low T (kT={kT_low:.3g})")
+    if has_hit:
+        ax.plot(N_values, abs_hi, "s-", color=COLORS["secondary"], label=f"High T (kT={kT_high:.3g})")
+
+    ax.set_xscale("log")
+    ax.set_xlabel("System size N")
+    ax.set_ylabel("Absorption fraction (%)")
+    ax.set_ylim(0, 25)
+    ax.legend(fontsize=7, loc="best")
+
+    ax.text(
+        0.98,
+        0.6,
+        "Absorption fraction does NOT\ngrow with N → no thermal runaway",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=9,
+        bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
+    )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(output_dir / "fig3_path_statistics.png")
     plt.close(fig)
-    print("  [✓] Fig 8 - Effective Channels")
+    print("  [✓] Fig 3 - Path Statistics")
+
+
+def generate_fig10_path_motifs(output_dir: Path, data: dict):
+    """Fig 10: 路径 motif（能量分箱）随 N 的变化。"""
+    N_values = np.asarray(data["N"], dtype=int)
+    x = np.arange(len(N_values))
+
+    motifs = ["1-4", "1-2-4", "1-3-4", "1-2-3-4"]
+    motif_labels = ["A→D", "A→B→D", "A→C→D", "A→B→C→D"]
+
+    # 颜色语义与 Fig1 对齐：
+    # - 蓝色（primary）: A→B→D
+    # - 橙色（secondary）: A→B→C→D
+    # - 绿色（tertiary）: A→C→D
+    motif_colors = [COLORS["highlight"], COLORS["primary"], COLORS["tertiary"], COLORS["secondary"]]
+
+    fig, axes = plt.subplots(2, 1, figsize=(9, 5.2), sharex=True, sharey=True)
+
+    def plot_one_panel(ax, prefix: str, title: str):
+        probs_by_motif = {m: [] for m in motifs}
+        probs_other = []
+
+        for i in range(len(N_values)):
+            counts_key = f"{prefix}_{i}_motif_counts_json"
+            ntraj_key = f"{prefix}_{i}_n_trajectories"
+            if counts_key not in data or ntraj_key not in data:
+                raise KeyError(f"缺少 motif 数据键：{counts_key} 或 {ntraj_key}")
+            counts = _load_json_scalar(data[counts_key])
+            ntraj = int(np.asarray(data[ntraj_key]).item())
+
+            total_selected = 0.0
+            for m in motifs:
+                p = float(counts.get(m, 0)) / max(ntraj, 1)
+                probs_by_motif[m].append(p)
+                total_selected += p
+            probs_other.append(max(0.0, 1.0 - total_selected))
+
+        bottom = np.zeros(len(N_values), dtype=float)
+        for m, label, color in zip(motifs, motif_labels, motif_colors):
+            vals = np.asarray(probs_by_motif[m], dtype=float)
+            ax.bar(x, vals, bottom=bottom, color=color, alpha=0.85, edgecolor="white", linewidth=0.6, label=label)
+            bottom = bottom + vals
+        ax.bar(
+            x,
+            probs_other,
+            bottom=bottom,
+            color=COLORS["gray"],
+            alpha=0.5,
+            edgecolor="white",
+            linewidth=0.6,
+            label="Other",
+        )
+
+        ax.set_title(title)
+        ax.set_ylabel("Motif probability")
+        ax.set_ylim(0, 1.0)
+
+        # 标注 N=20（若存在）
+        if 20 in set(N_values.tolist()):
+            idx20 = int(np.where(N_values == 20)[0][0])
+            ax.annotate(
+                "N=20\n(finite-size)",
+                (x[idx20], 0.98),
+                textcoords="offset points",
+                xytext=(0, 6),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color=COLORS["highlight"],
+            )
+
+        # 用一句话回答“是否出现 124→134 替换”
+        p124 = np.asarray(probs_by_motif["1-2-4"], dtype=float)
+        p134 = np.asarray(probs_by_motif["1-3-4"], dtype=float)
+        denom = p124 + p134
+        ratio = np.where(denom > 0, p124 / denom, np.nan)
+        ratio_text = (
+            "Share of A→B→D among (A→B→D, A→C→D):\n"
+            f"mean={np.nanmean(ratio):.2f}, range=[{np.nanmin(ratio):.2f},{np.nanmax(ratio):.2f}]"
+        )
+        ax.text(
+            0.98,
+            0.02,
+            ratio_text,
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=8,
+            bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8),
+        )
+
+    plot_one_panel(axes[0], "path_stats", r"(a) Low T motif composition (kT = 0.025)")
+
+    kT_hi = float(np.asarray(data.get("path_stats_hiT_kT", np.array(0.5))).item())
+    plot_one_panel(axes[1], "path_stats_hiT", rf"(b) High T motif composition (kT = {kT_hi:g})")
+
+    axes[1].set_xlabel("System size N")
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels([str(int(n)) for n in N_values])
+
+    handles, labels = axes[0].get_legend_handles_labels()
+
+    LEGEND_BBOX = (0.5, 1.02)
+    fig.legend(handles, labels, loc="upper center", ncol=5, frameon=True, framealpha=0.9,
+               bbox_to_anchor=LEGEND_BBOX)
+    plt.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(output_dir / "fig10_path_motifs.png")
+    plt.close(fig)
+    print("  [✓] Fig 10 - Path Motifs")
 
 
 def generate_fig9_q_distribution(output_dir: Path):
@@ -391,8 +580,9 @@ def generate_fig9_q_distribution(output_dir: Path):
         transform=ax.transAxes, ha="right", va="bottom", fontsize=8,
         bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8))
 
+    LEGEND_BBOX = (0.5, 1.02)
     fig.legend(handles_n, labels_n, loc="upper center", ncol=3, frameon=True, framealpha=0.9,
-               bbox_to_anchor=(0.5, 1.02))
+               bbox_to_anchor=LEGEND_BBOX)
     plt.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(output_dir / "fig9_q_distribution.png")
     plt.close(fig)
@@ -418,16 +608,17 @@ def main():
 
     print("\n核心图表：")
     generate_fig2_scaling_laws(output_dir, data)
-    generate_fig4_trajectories(output_dir)
-    generate_fig8_effective_channels(output_dir)
+    generate_fig3_path_statistics(output_dir, data)
     generate_fig9_q_distribution(output_dir)
+    generate_fig10_path_motifs(output_dir, data)
 
     print(f"\n核心图表已保存到: {output_dir}")
     print("\n推荐展示顺序：")
-    print("  1. Fig 2 - 标度律（核心结论）")
-    print("  2. Fig 4 - 轨迹（直观理解）")
-    print("  3. Fig 8 - 有效通道数（回答路径爆炸问题）")
+    print("  1. Fig 1 - 模型示意（见附录脚本，通常手工微调）")
+    print("  2. Fig 2 - 标度律（核心结论）")
+    print("  3. Fig 3 - 路径统计（是否出现组合爆炸）")
     print("  4. Fig 9 - q 分布（物理机制）")
+    print("  5. Fig10 - motif（124/134 是否替换）")
 
 
 if __name__ == "__main__":

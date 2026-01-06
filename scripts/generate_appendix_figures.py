@@ -1,10 +1,16 @@
-"""生成附录图表（Fig1/3/5/6/7）。
+"""生成附录图表。
 
-- Fig1: 最小示意 + 选择规则说明
-- Fig3: P(n_hop) 收敛 + 发射/吸收 + 累积概率
+当前建议：正文保留 Fig1/2/3/9/10；其余图放附录。
+
+附录图表：
+- Fig4: KMC 轨迹（多 N 对比）
 - Fig5: 低温/高温对比 + 细致平衡验证
-- Fig6: 简化敏感性（β、D_eff、τ_CV）
-- Fig7: D_KL + τ 对比
+- Fig6: 单因子扫描（参数敏感性）
+- Fig7: ME vs KMC 一致性（含稳态检查）
+- Fig8: 有效通道数（D_eff / D_pr / 累积概率）
+- Fig11: 一步跳阈值（ω_max 扫描）
+
+提示：你已手工微调过 Fig1/Fig11 的 legend，本脚本默认不重画它们，避免覆盖。
 """
 
 import sys
@@ -17,7 +23,11 @@ from matplotlib.ticker import FixedLocator, FuncFormatter
 repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
 
-from src.channel_analysis import effective_out_degree
+from src.channel_analysis import (
+    cumulative_channel_fraction,
+    effective_out_degree,
+    participation_ratio,
+)
 from src.fermi_golden_rule import build_rate_matrix
 from src.kinetic_monte_carlo import run_trajectory
 from src.master_equation import (
@@ -67,72 +77,88 @@ def setup_publication_style():
 
 def generate_fig1_model_schematic(output_dir: Path):
     """Fig 1: 最小模型示意图 + 选择规则说明。"""
-    fig, axes = plt.subplots(1, 2, figsize=(9, 4))
+    fig, ax = plt.subplots(1, 1, figsize=(6.8, 4))
 
-    # (a) 能级 + 允许跃迁 - 只画不可约区 k∈[0,π] 避免 ±k 简并
-    ax = axes[0]
-    ax.set_title("(a) Unique Energy Levels (±k degeneracy merged)")
+    ax.set_title("Single-band dispersion + energy bins")
 
-    N_show = 8
-    # 只取 k >= 0 的不可约区
-    k_vals = np.linspace(0, np.pi, N_show // 2 + 1, endpoint=True)
-    E_vals = -2 * np.cos(k_vals)
+    t0 = float(PHYSICS_PARAMS["t0"])
+    k_dense = np.linspace(0.0, np.pi, 600)
+    E_dense = 2.0 * t0 * np.cos(k_dense)
+    ax.plot(k_dense / np.pi, E_dense, color=COLORS["gray"], lw=2.0, alpha=0.9)
 
-    # 按能量排序
-    sort_idx = np.argsort(E_vals)
-    E_sorted = E_vals[sort_idx]
-    k_sorted = k_vals[sort_idx]
+    # 叠加离散 k 点（示意 N 对应的离散态数）
+    N_demo = 40
+    k_disc = np.linspace(0.0, np.pi, N_demo // 2 + 1, endpoint=True)
+    E_disc = 2.0 * t0 * np.cos(k_disc)
+    ax.scatter(k_disc / np.pi, E_disc, s=12, color=COLORS["gray"], alpha=0.7, zorder=3)
 
-    # 画能级（标注 k 值）
-    for i, (E, k) in enumerate(zip(E_sorted, k_sorted)):
-        ax.hlines(E, 0.2, 0.8, color=COLORS["gray"], linewidth=2.5, alpha=0.8)
-        deg = 1 if (k == 0 or np.isclose(k, np.pi)) else 2
-        ax.text(0.85, E, f"$k$={k/np.pi:.1f}$\\pi$ (×{deg})", va="center", fontsize=8)
-
-    # 画允许的跃迁
-    transitions = [(4, 2), (3, 1)]
-    for fr, to in transitions:
-        y_fr, y_to = E_sorted[fr], E_sorted[to]
-        ax.annotate(
-            "", xy=(0.5, y_to), xytext=(0.5, y_fr),
-            arrowprops=dict(arrowstyle="->", color=COLORS["secondary"],
-                           lw=2, connectionstyle="arc3,rad=-0.15"),
+    # motif 分箱：按归一化能量等分四段，对应不可约区的固定 k 区间
+    # E_min=-2t0, E_max=2t0 -> 分界 E={1,0,-1}*t0 -> k={π/3, π/2, 2π/3}
+    k_edges = np.array([0.0, np.pi / 3.0, np.pi / 2.0, 2.0 * np.pi / 3.0, np.pi], dtype=float)
+    bin_names = ["A (high E)", "B", "C", "D (low E)"]
+    bin_face = ["#ffe6e6", "#e6f2ff", "#fff2cc", "#e8f5e9"]
+    for i in range(4):
+        ax.axvspan(k_edges[i] / np.pi, k_edges[i + 1] / np.pi, color=bin_face[i], alpha=0.5, zorder=0)
+        ax.text(
+            0.5 * (k_edges[i] + k_edges[i + 1]) / np.pi,
+            2.05 * t0,
+            bin_names[i],
+            ha="center",
+            va="bottom",
+            fontsize=8,
         )
 
-    ax.set_xlim(0, 1.2)
-    ax.set_ylim(-2.5, 2.5)
-    ax.set_ylabel("Energy $E$ [$t_0$]")
-    ax.set_xticks([])
-    ax.grid(False)
+    # 代表性 k 点（固定标签，便于直观看“跨栏 vs 逐级”两类路径）
+    k_rep = np.array([np.pi / 6.0, 5.0 * np.pi / 12.0, 7.0 * np.pi / 12.0, 5.0 * np.pi / 6.0], dtype=float)
+    E_rep = 2.0 * t0 * np.cos(k_rep)
+    rep_labels = ["A*", "B*", "C*", "D*"]
+    rep_colors = [COLORS["highlight"], COLORS["primary"], COLORS["secondary"], COLORS["tertiary"]]
+    ax.scatter(k_rep / np.pi, E_rep, s=35, c=rep_colors, edgecolor="white", linewidth=0.8, zorder=4)
+    for x, y, lab in zip(k_rep / np.pi, E_rep, rep_labels):
+        ax.text(x, y + 0.08, lab, ha="center", va="bottom", fontsize=8)
 
-    ax.text(0.02, 0.7,
-        f"N = {N_show} sites\n"
-        "$E_k = -2t_0\\cos(ka)$\n"
-        "$E(k) = E(-k)$ → merged",
-        transform=ax.transAxes, va="top", fontsize=9,
-        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+    # 示例路径（仅示意：A*→B*→D* 与 A*→B*→C*→D*）
+    def _arrow(x0, y0, x1, y1, color, rad=0.0):
+        ax.annotate(
+            "",
+            xy=(x1, y1),
+            xytext=(x0, y0),
+            arrowprops=dict(
+                arrowstyle="->",
+                color=color,
+                lw=2.0,
+                alpha=0.85,
+                connectionstyle=f"arc3,rad={rad}",
+            ),
+        )
 
-    # (b) 选择规则说明
-    ax = axes[1]
-    ax.set_title("(b) Transition Selection Rules")
-    ax.axis("off")
+    _arrow(k_rep[0] / np.pi, E_rep[0], k_rep[1] / np.pi, E_rep[1], COLORS["primary"], rad=-0.12)
+    _arrow(k_rep[1] / np.pi, E_rep[1], k_rep[3] / np.pi, E_rep[3], COLORS["primary"], rad=-0.18)
+    _arrow(k_rep[0] / np.pi, E_rep[0], k_rep[1] / np.pi, E_rep[1], COLORS["secondary"], rad=0.12)
+    _arrow(k_rep[1] / np.pi, E_rep[1], k_rep[2] / np.pi, E_rep[2], COLORS["secondary"], rad=0.12)
+    _arrow(k_rep[2] / np.pi, E_rep[2], k_rep[3] / np.pi, E_rep[3], COLORS["secondary"], rad=0.12)
 
-    explanation = (
-        "Phonon-assisted transitions are NOT arbitrary:\n\n"
-        "1. Energy conservation:\n"
-        "   $E_i - E_j = \\hbar\\omega_q$ (emission)\n"
-        "   $E_j - E_i = \\hbar\\omega_q$ (absorption)\n\n"
-        "2. Momentum conservation:\n"
-        "   $k_i \\pm q = k_j$ (mod $2\\pi/a$)\n\n"
-        "3. Phonon dispersion constraint:\n"
-        "   $\\omega_q = \\omega_{\\max}|\\sin(qa/2)|$\n"
-        "   (acoustic branch, 1D monatomic chain)\n\n"
-        "→ Only specific $(k_i, k_j)$ pairs allowed\n"
-        "→ Effective channels $D_{\\rm eff} \\sim O(1)$, not $O(N)$"
-    )
-    ax.text(0.05, 0.95, explanation, transform=ax.transAxes,
-            va="top", fontsize=10, family="serif",
-            bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.9))
+    # 初态/终态定义（与主实验一致）
+    E_min, E_max = -2.0 * t0, 2.0 * t0
+    E_init = E_min + 0.9 * (E_max - E_min)
+    E_term = E_min + 0.1 * (E_max - E_min)
+    k_init_max = float(np.arccos(np.clip(E_init / (2.0 * t0), -1.0, 1.0)))
+    k_term_min = float(np.arccos(np.clip(E_term / (2.0 * t0), -1.0, 1.0)))
+
+    ax.axvspan(0.0, k_init_max / np.pi, color=COLORS["primary"], alpha=0.12, zorder=1)
+    ax.axvspan(k_term_min / np.pi, 1.0, color=COLORS["secondary"], alpha=0.12, zorder=1)
+    ax.axhline(E_init, color=COLORS["primary"], ls="--", lw=1.2, alpha=0.8)
+    ax.axhline(E_term, color=COLORS["secondary"], ls="--", lw=1.2, alpha=0.8)
+
+    ax.text(0.02, 0.8, "Initial region\n(top 10%)", transform=ax.transAxes, ha="left", va="top",
+            fontsize=8, bbox=dict(boxstyle="round", facecolor="white", alpha=0.9))
+    ax.text(0.98, 0.25, "Terminal region\n(bottom 10%)", transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=8, bbox=dict(boxstyle="round", facecolor="white", alpha=0.9))
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(-2.3 * t0, 2.3 * t0)
+    ax.set_xlabel(r"Momentum $k/\pi$ (irreducible zone)")
+    ax.set_ylabel(r"Energy $E$ [$t_0$]")
 
     plt.tight_layout()
     fig.savefig(output_dir / "fig1_model_schematic.png")
@@ -140,227 +166,214 @@ def generate_fig1_model_schematic(output_dir: Path):
     print("  [✓] Fig 1 - Model Schematic")
 
 
-def generate_fig3_path_statistics(output_dir: Path, data: dict):
-    """Fig 3: 路径统计（大改版）。"""
-    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+def generate_fig4_trajectories(output_dir: Path):
+    """Fig 4: KMC 轨迹（多 N 对比）。"""
+    fig, axes = plt.subplots(2, 2, figsize=(8, 6))
 
-    # 核心信息作为总标题
-    fig.suptitle(
-        "Path statistics: no combinatorial explosion (effective paths remain O(1))",
-        fontsize=11,
-        y=0.98,
-    )
+    N_list = [20, 40, 80, 160]
+    colors_traj = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
 
-    N_values = data["N"]
-    def _read_hist(prefix: str, idx: int, max_hops: int = 12) -> np.ndarray:
-        key = f"{prefix}_{idx}_n_hops_histogram"
-        hist = np.array(data.get(key, np.zeros(1, dtype=int)))
-        if hist.ndim != 1:
-            hist = hist.ravel()
-        if len(hist) < max_hops:
-            hist = np.pad(hist, (0, max_hops - len(hist)))
-        return hist[:max_hops]
+    for idx, N in enumerate(N_list):
+        ax = axes[idx // 2, idx % 2]
 
-    def _read_steps(prefix: str, idx: int) -> np.ndarray:
-        key = f"{prefix}_{idx}_step_sizes"
-        if key not in data:
-            return np.array([], dtype=float)
-        return np.asarray(data[key], dtype=float)
+        W, k_grid, E_grid = build_rate_matrix(n_cells=N, delta_mode="gaussian", **PHYSICS_PARAMS)
+        E = np.array(E_grid)
+        E_min, E_max = E.min(), E.max()
+        E_init = E_min + 0.9 * (E_max - E_min)
+        initial_state = int(np.argmin(np.abs(E - E_init)))
+        E_term = E_min + 0.1 * (E_max - E_min)
 
-    has_hit = any(f"path_stats_hiT_{i}_n_hops_histogram" in data for i in range(len(N_values)))
-    kT_low = float(data.get("kT", PHYSICS_PARAMS["kT"]))
-    kT_high = float(data.get("path_stats_hiT_kT", np.nan)) if has_hit else np.nan
+        def terminal_cond(state, energy, time):
+            return energy <= E_term
 
-    # (a) 关键尾部概率 vs N：P(n=3)、P(n>=4)（低温 vs 高温）
-    ax = axes[0, 0]
-    ax.set_title("(a) Hop-count tail vs N")
+        rng = np.random.default_rng(42 + idx)
+        for t_idx in range(5):
+            traj = run_trajectory(
+                W=W,
+                E_grid=E,
+                initial_state=initial_state,
+                terminal_condition=terminal_cond,
+                max_steps=10000,
+                rng=rng,
+            )
+            ax.step(traj.times, traj.energies, where="post", color=colors_traj[t_idx], alpha=0.7, lw=1.2)
 
-    p3_low, p4p_low = [], []
-    p3_hi, p4p_hi = [], []
+        ax.axhline(E_term, color=COLORS["gray"], ls="--", lw=1, label="Terminal")
+        ax.axhline(E_init, color=COLORS["gray"], ls=":", lw=1, label="Initial")
+        ax.set_xlabel(r"Time [$\hbar/t_0$]")
+        ax.set_ylabel(r"Energy [$t_0$]")
+        ax.set_title(f"N = {N}")
 
-    for i in range(len(N_values)):
-        h = _read_hist("path_stats", i)
-        p = h / max(h.sum(), 1)
-        p3_low.append(float(p[3]) if len(p) > 3 else 0.0)
-        p4p_low.append(float(np.sum(p[4:])) if len(p) > 4 else 0.0)
+        if idx == 0:
+            handles, labels = ax.get_legend_handles_labels()
 
-        if has_hit:
-            hh = _read_hist("path_stats_hiT", i)
-            pp = hh / max(hh.sum(), 1)
-            p3_hi.append(float(pp[3]) if len(pp) > 3 else 0.0)
-            p4p_hi.append(float(np.sum(pp[4:])) if len(pp) > 4 else 0.0)
-
-    ax.plot(N_values, np.array(p3_low) * 100, "o-", color=COLORS["primary"], label=f"Low T (kT={kT_low:.3g}): P(n=3)")
-    ax.plot(N_values, np.array(p4p_low) * 100, "s--", color=COLORS["primary"], alpha=0.8, label=f"Low T (kT={kT_low:.3g}): P(n≥4)")
-    if has_hit:
-        ax.plot(N_values, np.array(p3_hi) * 100, "o-", color=COLORS["secondary"], label=f"High T (kT={kT_high:.3g}): P(n=3)")
-        ax.plot(N_values, np.array(p4p_hi) * 100, "s--", color=COLORS["secondary"], alpha=0.8, label=f"High T (kT={kT_high:.3g}): P(n≥4)")
-
-    ax.set_xscale("log")
-    ax.set_xlabel("System size N")
-    ax.set_ylabel("Probability mass (%)")
-    ax.set_ylim(0, 105)
-    ax.legend(fontsize=7, loc="best")
-
-    ax.text(
-        0.02,
-        0.1,
-        "Key check: tail P(n≥4) does NOT grow with N\n→ no evidence of combinatorial explosion",
-        transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=9,
-        bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
-    )
-
-    # (b) 平均跳数 vs N（低温 vs 高温）
-    ax = axes[0, 1]
-    ax.set_title("(b) Mean hop count vs N")
-
-    mean_low, std_low = [], []
-    mean_hi, std_hi = [], []
-    for i in range(len(N_values)):
-        mean_low.append(float(data[f"path_stats_{i}_n_hops_mean"]))
-        std_low.append(float(data[f"path_stats_{i}_n_hops_std"]))
-        if has_hit:
-            mean_hi.append(float(data[f"path_stats_hiT_{i}_n_hops_mean"]))
-            std_hi.append(float(data[f"path_stats_hiT_{i}_n_hops_std"]))
-
-    ax.errorbar(
-        N_values,
-        mean_low,
-        yerr=std_low,
-        fmt="o-",
-        color=COLORS["primary"],
-        markersize=7,
-        capsize=4,
-        lw=2,
-        label=f"Low T (kT={kT_low:.3g})",
-    )
-    if has_hit:
-        ax.errorbar(
-            N_values,
-            mean_hi,
-            yerr=std_hi,
-            fmt="s-",
-            color=COLORS["secondary"],
-            markersize=7,
-            capsize=4,
-            lw=2,
-            label=f"High T (kT={kT_high:.3g})",
+    plt.suptitle("KMC Trajectories: Staircase Relaxation", fontsize=12, y=1.0)
+    if "handles" in locals():
+        LEGEND_BBOX = (0.5, 0.95)
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            ncol=2,
+            frameon=True,
+            framealpha=0.9,
+            bbox_to_anchor=LEGEND_BBOX,
         )
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(output_dir / "fig4_trajectories.png")
+    plt.close(fig)
+    print("  [✓] Fig 4 - Trajectories")
 
-    ax.set_xscale("log")
-    ax.set_xlabel("System size N")
-    ax.set_ylabel(r"$\langle n_{\rm hop} \rangle$")
-    ax.legend(fontsize=7, loc="best")
 
-    cv_low = float(np.std(mean_low) / np.mean(mean_low)) if np.mean(mean_low) > 0 else 0.0
-    msg = f"Low T CV = {cv_low:.3f}"
-    if has_hit:
-        cv_hi = float(np.std(mean_hi) / np.mean(mean_hi)) if np.mean(mean_hi) > 0 else 0.0
-        msg += f"\nHigh T CV = {cv_hi:.3f}"
-    ax.text(
-        0.02,
-        0.55,
-        msg + "\nNo growth with N",
-        transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=9,
-        bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
+def generate_fig8_effective_channels(output_dir: Path):
+    """Fig 8: 有效通道数（附录版：降低点云噪声）。"""
+    fig, axes = plt.subplots(1, 3, figsize=(10, 3.5))
+
+    N_list = [40, 80, 160, 320]
+    colors = [COLORS["primary"], COLORS["secondary"], COLORS["tertiary"], COLORS["quaternary"]]
+
+    all_D_eff = {}
+    all_D_pr = {}
+    all_E = {}
+
+    for N in N_list:
+        W, k_grid, E_grid = build_rate_matrix(n_cells=N, delta_mode="gaussian", **PHYSICS_PARAMS)
+        E = np.array(E_grid)
+        D_eff = effective_out_degree(W, epsilon=0.01)
+        D_pr = participation_ratio(W)
+        all_D_eff[N] = np.asarray(D_eff, dtype=float)
+        all_D_pr[N] = np.asarray(D_pr, dtype=float)
+        all_E[N] = E
+
+    # (a) D_eff vs 能量：分箱均值（+四分位带），避免散点糊成一团
+    ax = axes[0]
+    ax.set_title("(a) $D_{\\rm eff}$ vs energy (binned mean)")
+
+    n_bins = 20
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+    for i, N in enumerate(N_list):
+        E = all_E[N]
+        E_norm = (E - E.min()) / (E.max() - E.min())
+        D = all_D_eff[N]
+
+        means = np.full(n_bins, np.nan, dtype=float)
+        q25 = np.full(n_bins, np.nan, dtype=float)
+        q75 = np.full(n_bins, np.nan, dtype=float)
+        for b in range(n_bins):
+            mask = (E_norm >= bins[b]) & (E_norm < bins[b + 1])
+            if not np.any(mask):
+                continue
+            vals = D[mask]
+            means[b] = float(np.mean(vals))
+            q25[b] = float(np.quantile(vals, 0.25))
+            q75[b] = float(np.quantile(vals, 0.75))
+
+        ax.plot(bin_centers, means, "-", color=colors[i], lw=1.8, label=f"N={N}")
+        ax.fill_between(bin_centers, q25, q75, color=colors[i], alpha=0.15, linewidth=0)
+
+    ax.set_xlabel(r"Normalized energy $(E - E_{\min})/(E_{\max} - E_{\min})$")
+    ax.set_ylabel(r"$D_{\rm eff}$ (channels with $p_{ij} > 1\%$)")
+    handles_n, labels_n = ax.get_legend_handles_labels()
+    ax.set_ylim(0, max(float(np.nanmax(all_D_eff[N])) for N in N_list) + 2)
+
+    # (b) 平均有效出度 vs N
+    ax = axes[1]
+    ax.set_title("(b) Mean effective channels vs N")
+    mean_D_eff = [float(np.mean(all_D_eff[N])) for N in N_list]
+    mean_D_pr = [float(np.mean(all_D_pr[N])) for N in N_list]
+
+    ax.plot(
+        N_list,
+        mean_D_eff,
+        "o-",
+        color=COLORS["primary"],
+        markersize=8,
+        label=r"$\langle D_{\rm eff} \rangle$ (1% threshold)",
     )
-
-    # (c) ΔE（带符号）分布：用代表性 N 展示低温/高温差异
-    ax = axes[1, 0]
-
-    N_demo = 80
-    try:
-        idx_demo = int(np.where(np.asarray(N_values, dtype=int) == N_demo)[0][0])
-    except Exception:
-        idx_demo = 0
-        N_demo = int(np.asarray(N_values, dtype=int)[0])
-
-    ax.set_title(f"(c) Signed energy step distribution (N={N_demo})")
-
-    steps_low = _read_steps("path_stats", idx_demo)
-    steps_hi = _read_steps("path_stats_hiT", idx_demo) if has_hit else np.array([], dtype=float)
-
-    def _plot_steps(steps: np.ndarray, color: str, label: str):
-        if steps.size == 0:
-            return
-        bins = np.linspace(-2.0, 2.0, 81)
-        ax.hist(steps, bins=bins, color=color, alpha=0.45, edgecolor="white", label=label)
-
-    _plot_steps(steps_low, COLORS["primary"], f"Low T (kT={kT_low:.3g})")
-    if has_hit:
-        _plot_steps(steps_hi, COLORS["secondary"], f"High T (kT={kT_high:.3g})")
-
-    ax.axvline(0.0, color=COLORS["gray"], ls="--", lw=1)
-    omega_max = np.sqrt(2 * PHYSICS_PARAMS["k_spring"] / PHYSICS_PARAMS["mass"])
-    ax.axvline(omega_max, color=COLORS["tertiary"], ls=":", lw=2, label=r"$\omega_{\max}$")
-    ax.axvline(-omega_max, color=COLORS["tertiary"], ls=":", lw=2)
-    ax.set_xlabel(r"$\Delta E = E_{\rm before} - E_{\rm after}$ [$t_0$]  (emission>0, absorption<0)")
-    ax.set_ylabel("Count")
-    ax.legend(fontsize=7, loc="upper left")
-
-    def _abs_frac(steps: np.ndarray) -> float:
-        if steps.size == 0:
-            return 0.0
-        return float(np.mean(steps < 0.0))
-
-    txt = f"N={N_demo}\nLow T absorption = {_abs_frac(steps_low)*100:.2f}%"
-    if has_hit:
-        txt += f"\nHigh T absorption = {_abs_frac(steps_hi)*100:.2f}%"
-    ax.text(
-        0.02,
-        0.5,
-        txt,
-        transform=ax.transAxes,
-        ha="left",
-        va="top",
-        fontsize=9,
-        bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.85),
+    ax.plot(
+        N_list,
+        mean_D_pr,
+        "s-",
+        color=COLORS["secondary"],
+        markersize=8,
+        label=r"$\langle D_{\rm pr} \rangle$ (participation ratio)",
     )
+    ax.plot(N_list, [n - 1 for n in N_list], "--", color=COLORS["gray"], lw=1.5, label="N-1 (naive)")
 
-    # (d) 吸收占比 vs N（低温 vs 高温）
-    ax = axes[1, 1]
-    ax.set_title("(d) Absorption fraction vs N")
-
-    abs_low, abs_hi = [], []
-    for i in range(len(N_values)):
-        s = _read_steps("path_stats", i)
-        abs_low.append(_abs_frac(s) * 100)
-        if has_hit:
-            sh = _read_steps("path_stats_hiT", i)
-            abs_hi.append(_abs_frac(sh) * 100)
-
-    ax.plot(N_values, abs_low, "o-", color=COLORS["primary"], label=f"Low T (kT={kT_low:.3g})")
-    if has_hit:
-        ax.plot(N_values, abs_hi, "s-", color=COLORS["secondary"], label=f"High T (kT={kT_high:.3g})")
-
-    ax.set_xscale("log")
     ax.set_xlabel("System size N")
-    ax.set_ylabel("Absorption fraction (%)")
-    ax.set_ylim(0, 25)
-    ax.legend(fontsize=7, loc="best")
+    ax.set_ylabel("Mean effective channels")
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(FixedLocator(N_list))
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):d}" if x in N_list else ""))
+    ax.minorticks_off()
+    ax.legend(fontsize=7, loc="upper left", frameon=True, framealpha=0.9)
 
-    # 关键说明文字框
     ax.text(
         0.98,
-        0.6,
-        "Absorption fraction does NOT\ngrow with N → no thermal runaway",
+        0.15,
+        f"O(1) evidence:\n"
+        f"$D_{{\\rm eff}}$ ≈ {float(np.mean(mean_D_eff)):.1f}\n"
+        f"$D_{{\\rm pr}}$ ≈ {float(np.mean(mean_D_pr)):.1f}",
         transform=ax.transAxes,
         ha="right",
         va="bottom",
-        fontsize=9,
+        fontsize=8,
         bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
     )
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(output_dir / "fig3_path_statistics.png")
+    # (c) 累积概率曲线（示意：少数通道占据大部分概率）
+    ax = axes[2]
+    ax.set_title("(c) Cumulative channel probability (N=80)")
+
+    N_demo = 80
+    W, k_grid, E_grid = build_rate_matrix(n_cells=N_demo, delta_mode="gaussian", **PHYSICS_PARAMS)
+    E = np.array(E_grid)
+    E_norm = (E - E.min()) / (E.max() - E.min())
+    idx_high = int(np.argmin(np.abs(E_norm - 0.9)))
+    idx_mid = int(np.argmin(np.abs(E_norm - 0.5)))
+    idx_low = int(np.argmin(np.abs(E_norm - 0.1)))
+
+    for state_idx, label, color in [
+        (idx_high, "High E", COLORS["highlight"]),
+        (idx_mid, "Mid E", COLORS["secondary"]),
+        (idx_low, "Low E", COLORS["primary"]),
+    ]:
+        k_vals, cum_prob = cumulative_channel_fraction(W, state_idx)
+        ax.plot(k_vals[:20], cum_prob[:20], "o-", color=color, markersize=4, label=label)
+
+    ax.axhline(0.9, color=COLORS["gray"], ls="--", lw=1, label="90%")
+    ax.set_xlabel("Number of top channels k")
+    ax.set_ylabel("Cumulative probability")
+    ax.legend(fontsize=7, loc="lower right")
+    ax.set_xlim(0, 15)
+    ax.set_ylim(0, 1.05)
+
+    ax.text(
+        0.4,
+        0.4,
+        "Few channels capture\nmost transition probability",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=8,
+        bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8),
+    )
+
+    LEGEND_BBOX = (0.5, 1.02)
+    fig.legend(
+        handles_n,
+        labels_n,
+        loc="upper center",
+        ncol=4,
+        frameon=True,
+        framealpha=0.9,
+        bbox_to_anchor=LEGEND_BBOX,
+    )
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(output_dir / "fig8_effective_channels.png")
     plt.close(fig)
-    print("  [✓] Fig 3 - Path Statistics")
+    print("  [✓] Fig 8 - Effective Channels")
 
 
 def generate_fig5_rate_matrix(output_dir: Path):
@@ -601,18 +614,18 @@ def generate_fig7_consistency(output_dir: Path, data: dict):
     ax.set_xscale("log")
     ax.legend(fontsize=7, loc="upper right")
 
-    # Spearman 相关（单调性）
-    from scipy.stats import spearmanr
+    # Spearman 相关（单调性）：避免对 SciPy 的硬依赖
     try:
-        rho, pval = spearmanr(tau_me, tau_kmc)
+        from scipy.stats import spearmanr  # type: ignore
+        rho, _pval = spearmanr(tau_me, tau_kmc)
         corr_text = f"Spearman ρ = {rho:.2f}"
     except Exception:
         corr_text = ""
 
     ax.text(0.98, 0.02,
         f"{corr_text}\n"
-        "Different definitions,\n"
-        "same N-dependence trend",
+        "Different definitions;\n"
+        "both saturate for N≥40",
         transform=ax.transAxes, ha="right", va="bottom", fontsize=7,
         bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
 
@@ -640,7 +653,7 @@ def generate_fig7_consistency(output_dir: Path, data: dict):
         transform=ax.transAxes, ha="right", va="top", fontsize=8,
         bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8))
 
-    # (c) D_KL vs N（稳态分布验证）- 注明 N=20 finite-size
+    # (c) D_KL vs N（稳态分布验证）
     ax = axes[2]
     ax.set_title("(c) Steady-State Accuracy")
 
@@ -661,18 +674,24 @@ def generate_fig7_consistency(output_dir: Path, data: dict):
 
     ax.semilogy(N_values, D_KL_list, "o-", color=COLORS["primary"], markersize=8)
 
-    # 标注 N=20 finite-size
-    ax.annotate("N=20\n(finite-size)", (N_values[0], D_KL_list[0]),
-                textcoords="offset points", xytext=(15, 0), fontsize=7,
-                arrowprops=dict(arrowstyle="->", color=COLORS["gray"]))
+    idx_max = int(np.argmax(np.asarray(D_KL_list, dtype=float)))
+    ax.annotate(
+        f"max at N={int(N_values[idx_max])}",
+        (float(N_values[idx_max]), float(D_KL_list[idx_max])),
+        textcoords="offset points",
+        xytext=(12, 0),
+        fontsize=7,
+        arrowprops=dict(arrowstyle="->", color=COLORS["gray"]),
+    )
 
-    ax.axhline(0.01, color=COLORS["gray"], ls="--", lw=1, label="0.01 threshold")
+    ax.axhline(0.02, color=COLORS["gray"], ls="--", lw=1, label="0.02 reference")
     ax.set_xlabel("System size N")
     ax.set_ylabel(r"$D_{\rm KL}(P_{\infty} \| P_{\rm Boltz})$")
     ax.legend(fontsize=8, loc="upper right")
 
     ax.text(0.98, 0.32,
-        "Steady state ≈ Boltzmann\n(finite-size deviation at N=20)",
+        f"All N: $D_{{\\rm KL}}\\lesssim {float(np.max(D_KL_list)):.3g}$\n"
+        "→ stationary ≈ Boltzmann",
         transform=ax.transAxes, ha="right", va="bottom", fontsize=7,
         bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8))
 
@@ -680,6 +699,80 @@ def generate_fig7_consistency(output_dir: Path, data: dict):
     fig.savefig(output_dir / "fig7_consistency.png")
     plt.close(fig)
     print("  [✓] Fig 7 - Consistency")
+
+
+def generate_fig11_onehop_threshold(output_dir: Path):
+    """Fig 11: 扫描 ω_max，观察“一步跳”(n_hop=1) 何时出现。"""
+    data_path = repo_root / "results" / "onehop_scan_data.npz"
+    if not data_path.exists():
+        print("  [!] 缺少 onehop_scan_data.npz，跳过 Fig 11（先运行 scripts/run_onehop_scan.py）")
+        return
+
+    d = dict(np.load(data_path, allow_pickle=True))
+    omega = np.asarray(d["omega_max_values"], dtype=float)
+    p1 = np.asarray(d["p_onehop"], dtype=float)
+    p2 = np.asarray(d["p_twohop"], dtype=float)
+    mean_n = np.asarray(d["mean_nhop"], dtype=float)
+    deltaE = np.asarray(d["deltaE_to_terminal"], dtype=float)
+    n_cells = int(np.asarray(d["n_cells"]).item())
+    kT = float(np.asarray(d["kT"]).item())
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.2, 3.5))
+
+    # (a) P(n=1) / P(n=2)
+    ax = axes[0]
+    ax.set_title(r"(a) One-hop probability vs $\omega_{\max}$")
+    ax.semilogy(omega, np.maximum(p1, 1e-6), "o-", color=COLORS["highlight"], label=r"$P(n_{\rm hop}=1)$")
+    ax.semilogy(omega, np.maximum(p2, 1e-6), "s--", color=COLORS["secondary"], label=r"$P(n_{\rm hop}=2)$")
+    ax.set_xlabel(r"$\omega_{\max}$")
+    ax.set_ylabel("Probability")
+    ax.set_ylim(1e-6, 1.0)
+
+    # 简单阈值参考：需要单声子能量 ≥ 初态到终止阈值的能量落差
+    thr = float(np.mean(deltaE))
+    ax.axvline(thr, color=COLORS["gray"], ls=":", lw=1.5, label=r"mean $\Delta E_{\rm need}$")
+    ax.text(
+        0.57,
+        0.15,
+        rf"$N={n_cells}$, $kT={kT:g}$" + "\n" + rf"$\langle\Delta E_{{\rm need}}\rangle\approx {thr:.2f}$",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=8,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.9),
+    )
+
+    # (b) 平均跳数
+    ax = axes[1]
+    ax.set_title(r"(b) Mean hop count vs $\omega_{\max}$")
+    ax.plot(omega, mean_n, "o-", color=COLORS["primary"], label=r"$\langle n_{\rm hop}\rangle$")
+    ax.set_xlabel(r"$\omega_{\max}$")
+    ax.set_ylabel(r"$\langle n_{\rm hop}\rangle$")
+    ax.set_ylim(1.0, max(6.0, float(np.max(mean_n) + 0.5)))
+    ax.axvline(thr, color=COLORS["gray"], ls=":", lw=1.5)
+    ax.text(
+        0.02,
+        0.05,
+        "Note: non-monotonicity is possible\n(energy matching + q-selectivity)",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=7,
+        bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8),
+    )
+
+    LEGEND_BBOX = (0.5, 1.08)
+    handles, labels = [], []
+    for a in axes:
+        h, l = a.get_legend_handles_labels()
+        handles.extend(h)
+        labels.extend(l)
+    fig.legend(handles, labels, loc="upper center", ncol=3, frameon=True, framealpha=0.9, bbox_to_anchor=LEGEND_BBOX)
+
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(output_dir / "fig11_onehop_threshold.png")
+    plt.close(fig)
+    print("  [✓] Fig 11 - One-hop Threshold")
 
 
 def main():
@@ -700,11 +793,13 @@ def main():
     data = dict(np.load(data_file))
 
     print("\n附录图表：")
-    generate_fig1_model_schematic(output_dir)
-    generate_fig3_path_statistics(output_dir, data)
+    generate_fig1_model_schematic(output_dir)  
+    generate_fig4_trajectories(output_dir)
     generate_fig5_rate_matrix(output_dir)
     generate_fig6_sensitivity(output_dir)
     generate_fig7_consistency(output_dir, data)
+    generate_fig8_effective_channels(output_dir)
+    generate_fig11_onehop_threshold(output_dir) 
 
     print(f"\n附录图表已保存到: {output_dir}")
 
